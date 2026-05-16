@@ -1,0 +1,37 @@
+# Go
+apps/api/bin/
+apps/api/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Node
+node_modules/
+apps/admin-web/node_modules/
+apps/admin-web/build/
+apps/admin-web/.react-router/
+.pnp
+.pnp.js
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Migrations
+*.sql.bak
+
+# Generated
+apps/admin-web/src/lib/api/generated/

@@ -1,0 +1,348 @@
+openapi: "3.1.0"
+info:
+  title: GDGoC Admin API
+  version: "1.0.0"
+  description: API for Google Developer Groups on Campus admin panel
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        email:       { type: string }
+        name:        { type: string }
+        role:        { type: string, enum: [super_admin, chapter_leader, editor] }
+        chapter_id:  { type: string, format: uuid, nullable: true }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+
+    Chapter:
+      type: object
+      properties:
+        id:              { type: string, format: uuid }
+        name:            { type: string }
+        code:            { type: string }
+        since_year:      { type: integer, nullable: true }
+        leader_codename: { type: string }
+        email:           { type: string }
+        leader_id:       { type: string, format: uuid, nullable: true }
+        status:          { type: string, enum: [active, inactive] }
+        created_at:      { type: string, format: date-time }
+        updated_at:      { type: string, format: date-time }
+
+    Template:
+      type: object
+      properties:
+        id:                  { type: string, format: uuid }
+        name:                { type: string }
+        description:         { type: string }
+        owner_user_id:       { type: string, format: uuid }
+        owner_chapter_id:    { type: string, format: uuid }
+        visibility:          { type: string, enum: [private, public] }
+        status:              { type: string, enum: [draft, published, archived] }
+        source_template_id:  { type: string, format: uuid, nullable: true }
+        current_version_id:  { type: string, format: uuid, nullable: true }
+        created_at:          { type: string, format: date-time }
+        updated_at:          { type: string, format: date-time }
+
+    SceneDefinition:
+      type: object
+      required: [width, height, background, layers]
+      properties:
+        width:      { type: integer }
+        height:     { type: integer }
+        background: { type: string }
+        layers:
+          type: array
+          items: { $ref: '#/components/schemas/Layer' }
+
+    Layer:
+      type: object
+      required: [id, type, z_index, x, y, width, height, rotation, visible]
+      properties:
+        id:          { type: string }
+        type:        { type: string, enum: [text, image] }
+        z_index:     { type: integer }
+        x:           { type: number }
+        y:           { type: number }
+        width:       { type: number }
+        height:      { type: number }
+        rotation:    { type: number }
+        visible:     { type: boolean }
+        text_props:  { $ref: '#/components/schemas/TextProps' }
+        image_props: { $ref: '#/components/schemas/ImageProps' }
+
+    TextProps:
+      type: object
+      properties:
+        content:      { type: string }
+        font_size:    { type: integer }
+        font_family:  { type: string }
+        bold:         { type: boolean }
+        italic:       { type: boolean }
+        font_weight:  { type: integer, description: "CSS font-weight (100–900). Overrides bold when set." }
+        color:        { type: string }
+        align:        { type: string, enum: [left, center, right] }
+        is_dynamic:   { type: boolean }
+        variable_key: { type: string }
+
+    ImageProps:
+      type: object
+      properties:
+        asset_key:  { type: string }
+        object_fit: { type: string, enum: [cover, contain, fill] }
+
+    IssuanceBatch:
+      type: object
+      properties:
+        id:                   { type: string, format: uuid }
+        chapter_id:           { type: string, format: uuid }
+        template_id:          { type: string, format: uuid }
+        template_version_id:  { type: string, format: uuid }
+        name:                 { type: string }
+        status:               { type: string, enum: [pending, processing, completed, cancelled, failed] }
+        total_count:          { type: integer }
+        success_count:        { type: integer }
+        failed_count:         { type: integer }
+        created_by_user_id:   { type: string, format: uuid }
+        created_at:           { type: string, format: date-time }
+        updated_at:           { type: string, format: date-time }
+
+    BatchRecipient:
+      type: object
+      properties:
+        id:                { type: string }
+        batch_id:          { type: string, format: uuid }
+        email:             { type: string }
+        variables:         { type: object, additionalProperties: { type: string } }
+        status:            { type: string, enum: [queued, rendering, rendered, emailed, failed, revoked] }
+        pdf_object_key:    { type: string }
+        png_object_key:    { type: string }
+        failure_reason:    { type: string, nullable: true }
+
+    VerificationResult:
+      type: object
+      properties:
+        valid:            { type: boolean }
+        code:             { type: string }
+        recipient_email:  { type: string }
+        recipient_name:   { type: string }
+        template_name:    { type: string }
+        chapter_name:     { type: string }
+        issued_at:        { type: string, format: date-time }
+        status:           { type: string }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+security:
+  - sessionCookie: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: OK
+
+  /auth/login:
+    get:
+      summary: Initiate Google OAuth login via Kayan
+      security: []
+      responses:
+        "307": { description: Redirect to Kayan login }
+
+  /auth/callback:
+    get:
+      summary: OAuth callback — sets session cookie
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        "303": { description: Redirect to frontend }
+        "400": { description: Invalid state }
+        "403": { description: Email not whitelisted }
+
+  /auth/logout:
+    post:
+      summary: Revoke session
+      responses:
+        "200": { description: Logged out }
+
+  /me:
+    get:
+      summary: Current user profile
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /verify/{code}:
+    get:
+      summary: Verify a certificate by code (public)
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationResult' }
+
+  /templates:
+    get:
+      summary: List templates (own chapter or all for super admin)
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Template' }
+    post:
+      summary: Create a new template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scene]
+              properties:
+                name:        { type: string }
+                description: { type: string }
+                visibility:  { type: string, enum: [private, public] }
+                scene:       { $ref: '#/components/schemas/SceneDefinition' }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Template' }
+
+  /templates/public:
+    get:
+      summary: List all public published templates
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Template' }
+
+  /templates/{id}/publish:
+    post:
+      summary: Publish a template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Published }
+
+  /templates/{id}/clone:
+    post:
+      summary: Clone a template into your chapter
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Template' }
+
+  /batches:
+    get:
+      summary: List issuance batches
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/IssuanceBatch' }
+    post:
+      summary: Create and queue a new issuance batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [template_id, name, recipients]
+              properties:
+                template_id: { type: string, format: uuid }
+                name:        { type: string }
+                recipients:
+                  type: array
+                  items:
+                    type: object
+                    required: [email, variables]
+                    properties:
+                      email:     { type: string }
+                      variables: { type: object, additionalProperties: { type: string } }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IssuanceBatch' }
+
+  /batches/{id}/progress:
+    get:
+      summary: Get batch progress
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batch_id:      { type: string }
+                  status:        { type: string }
+                  total_count:   { type: integer }
+                  success_count: { type: integer }
+                  failed_count:  { type: integer }
+
+  /certificates/{id}/revoke:
+    post:
+      summary: Revoke a certificate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Revoked }
