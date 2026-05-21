@@ -54,6 +54,12 @@ export default [
       route(":id/certificates", "routes/batches/certificates.tsx"),
     ]),
 
+    // Certifications (grouped by cert_name — chapter leaders only)
+    route("certifications", "routes/certifications.tsx"),
+
+    // Certification metadata management (chapter members only)
+    route("cert-metadata", "routes/cert-metadata/index.tsx"),
+
     // Email
     ...prefix("mail", [
       index("routes/mail/index.tsx"),

@@ -37,7 +37,7 @@ export default function ChapterEditPage() {
   const [code, setCode] = useState(chapter.code ?? "");
   const [sinceYear, setSinceYear] = useState(chapter.since_year?.toString() ?? "");
   const [leaderCodename, setLeaderCodename] = useState(chapter.leader_codename ?? "");
-  const [email, setEmail] = useState(chapter.email);
+  const [email, setEmail] = useState(chapter.email ?? "");
   const [status, setStatus] = useState(chapter.status);
   const [leaderId, setLeaderId] = useState(chapter.leader_id ?? "");
   const [saving, setSaving] = useState(false);
@@ -54,7 +54,7 @@ export default function ChapterEditPage() {
         code: code.toUpperCase(),
         since_year: Number.isFinite(parsedSinceYear) ? parsedSinceYear : undefined,
         leader_codename: leaderCodename.toUpperCase().trim(),
-        email,
+        email: email.trim() || undefined,
         status,
       });
       if (canManageUsers && leaderId && leaderId !== (chapter.leader_id ?? "")) {
@@ -84,13 +84,7 @@ export default function ChapterEditPage() {
 
       {/* Profile Picture */}
       <div className="flex items-center gap-4 mb-6">
-        {picturePreview ? (
-          <img src={picturePreview} alt={name} className="w-16 h-16 rounded-full object-cover" />
-        ) : (
-          <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center">
-            <span className="text-primary font-semibold text-2xl">{name.charAt(0).toUpperCase()}</span>
-          </div>
-        )}
+        <img src={picturePreview ?? "/avatar.png"} alt={name} className="w-16 h-16 rounded-full object-cover" />
         <label className="cursor-pointer text-sm text-primary hover:underline font-medium">
           {uploadingPic ? "Uploading…" : "Change Photo"}
           <input type="file" accept="image/*" className="hidden" onChange={handlePictureChange} disabled={uploadingPic} />
@@ -145,14 +139,14 @@ export default function ChapterEditPage() {
               <p className="text-xs text-muted-foreground">Codename used for certification ID generation.</p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="ch-email">Chapter Email *</Label>
+              <Label htmlFor="ch-email">Chapter Email</Label>
               <Input
                 id="ch-email"
                 type="email"
-                required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
+              <p className="text-xs text-muted-foreground">Optional — connect Gmail or Outlook via SMTP settings to fill automatically.</p>
             </div>
             {canManageUsers && (
               <div className="space-y-1.5">

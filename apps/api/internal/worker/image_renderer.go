@@ -27,6 +27,7 @@ import (
 	"golang.org/x/image/font/gofont/goitalic"
 	"golang.org/x/image/font/gofont/goregular"
 
+	"github.com/skip2/go-qrcode"
 	tmpl "github.com/gdgoc/admin-api/internal/domain/templates"
 	"github.com/gdgoc/admin-api/internal/storage"
 )
@@ -402,6 +403,8 @@ func (r *ImageRenderer) render(ctx context.Context, scene tmpl.SceneDefinition, 
 			r.drawImageLayer(ctx, dc, layer, float64(h))
 		case tmpl.LayerTypeShape:
 			r.drawShape(dc, layer, float64(h))
+		case tmpl.LayerTypeQR:
+			r.drawQrLayer(dc, layer, vars, float64(h))
 		}
 	}
 
@@ -575,6 +578,69 @@ func (r *ImageRenderer) drawImageLayer(ctx context.Context, dc *canvas.Context, 
 	x := layer.X - layer.Width/2
 	y := layer.Y - layer.Height/2
 	dc.DrawImage(x, flipY(h, y)-imgH, scaled, canvas.DPMM(1.0))
+}
+
+// drawQrLayer generates a QR code and draws it like an image layer.
+// Content supports {{variable}} interpolation.
+func (r *ImageRenderer) drawQrLayer(dc *canvas.Context, layer tmpl.Layer, vars map[string]string, h float64) {
+	if layer.QrProps == nil {
+		return
+	}
+	qp := layer.QrProps
+
+	// Resolve content — interpolate {{variable}} tokens.
+	content := Interpolate(qp.Content, vars)
+	if content == "" {
+		content = "https://example.com"
+	}
+
+	// Map error-correction level string → go-qrcode constant.
+	var ecLevel qrcode.RecoveryLevel
+	switch strings.ToUpper(qp.ErrorCorrection) {
+	case "L":
+		ecLevel = qrcode.Low
+	case "Q":
+		ecLevel = qrcode.High // go-qrcode has no "Q"; map to High
+	case "H":
+		ecLevel = qrcode.Highest
+	default: // "M" or empty
+		ecLevel = qrcode.Medium
+	}
+
+	qr, err := qrcode.New(content, ecLevel)
+	if err != nil {
+		log.Printf("QR encode error for layer %q: %v", layer.ID, err)
+		return
+	}
+	qr.DisableBorder = true
+
+	// Apply colours from props; go-qrcode handles the pixel mapping natively.
+	if qp.ColorDark != "" {
+		qr.ForegroundColor = parseHexColor(qp.ColorDark)
+	}
+	if qp.ColorLight != "" {
+		qr.BackgroundColor = parseHexColor(qp.ColorLight)
+	}
+
+	// Render at the layer's pixel size (minimum 64 px).
+	size := int(math.Max(layer.Width, 64))
+	img := qr.Image(size)
+
+	// Scale to exactly fill the layer bounding box.
+	target := int(math.Max(layer.Width, layer.Height))
+	scaled := fitImage(img, target, target, "fill")
+
+	dc.Push()
+	defer dc.Pop()
+
+	if layer.Rotation != 0 {
+		dc.RotateAbout(layer.Rotation, layer.X, flipY(h, layer.Y))
+	}
+
+	imgH2 := float64(scaled.Bounds().Dy())
+	x := layer.X - layer.Width/2
+	y := layer.Y - layer.Height/2
+	dc.DrawImage(x, flipY(h, y)-imgH2, scaled, canvas.DPMM(1.0))
 }
 
 func (r *ImageRenderer) drawShape(dc *canvas.Context, layer tmpl.Layer, h float64) {

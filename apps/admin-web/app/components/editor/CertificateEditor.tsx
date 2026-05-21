@@ -91,6 +91,29 @@ export function CertificateEditor({ scene, onChange, assetBaseUrl, getImageUrl, 
   const addDynamicTextField = (variableKey: string) =>
     addTextLayer(`\${${variableKey}}`, { is_dynamic: true, variable_key: variableKey, bold: true, font_size: 40 });
 
+  const addQrLayer = () => {
+    const size = Math.round(Math.min(scene.width, scene.height) * 0.25);
+    const newLayer = {
+      id: nanoid(),
+      type: "qr" as const,
+      z_index: scene.layers.length,
+      x: Math.round(scene.width / 2),
+      y: Math.round(scene.height / 2),
+      width: size,
+      height: size,
+      rotation: 0,
+      visible: true,
+      qr_props: {
+        content: "{{cert.verify_url}}",
+        color_dark: "#000000",
+        color_light: "#ffffff",
+        error_correction: "M" as const,
+      },
+    };
+    onChange({ ...scene, layers: [...scene.layers, newLayer] });
+    setSelectedId(newLayer.id);
+  };
+
   const commitShapeDraw = (kind: ShapeKind, cx: number, cy: number, w: number, h: number) => {
     const isLine = kind === "line";
     const fw = Math.round(w);
@@ -189,6 +212,7 @@ export function CertificateEditor({ scene, onChange, assetBaseUrl, getImageUrl, 
       text_props: src.text_props ? { ...src.text_props } : undefined,
       image_props: src.image_props ? { ...src.image_props } : undefined,
       shape_props: src.shape_props ? { ...src.shape_props, gradient_stops: src.shape_props.gradient_stops.map((s) => ({ ...s })) } : undefined,
+      qr_props: src.qr_props ? { ...src.qr_props } : undefined,
     };
     onChange({ ...scene, layers: [...scene.layers, copy] });
     setSelectedId(copy.id);
@@ -261,6 +285,7 @@ export function CertificateEditor({ scene, onChange, assetBaseUrl, getImageUrl, 
           shape_props: src.shape_props
             ? { ...src.shape_props, gradient_stops: src.shape_props.gradient_stops.map((s) => ({ ...s })) }
             : undefined,
+          qr_props: src.qr_props ? { ...src.qr_props } : undefined,
         }));
         onChange({ ...scene, layers: [...scene.layers, ...copies] });
         const [first, ...rest] = copies;
@@ -336,6 +361,7 @@ export function CertificateEditor({ scene, onChange, assetBaseUrl, getImageUrl, 
         onToolModeChange={setToolMode}
         onAddText={() => addTextLayer()}
         onAddImageClick={() => fileInputRef.current?.click()}
+        onAddQr={addQrLayer}
         onSelectShapeTool={(kind) => {
           setDrawShapeKind((prev) => prev === kind ? null : kind);
           setToolMode("select");

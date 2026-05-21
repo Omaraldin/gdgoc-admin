@@ -139,9 +139,13 @@ components:
         recipient_email:  { type: string }
         recipient_name:   { type: string }
         template_name:    { type: string }
+        batch_name:       { type: string }
         chapter_name:     { type: string }
         issued_at:        { type: string, format: date-time }
         status:           { type: string }
+        preview_image_url:{ type: string }
+        verify_url:       { type: string }
+        share_url:        { type: string }
 
     Error:
       type: object

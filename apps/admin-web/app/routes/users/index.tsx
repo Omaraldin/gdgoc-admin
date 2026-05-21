@@ -1,6 +1,7 @@
-import { useLoaderData } from "react-router";
+import { useLoaderData, useOutletContext } from "react-router";
 import { useState, useMemo } from "react";
-import { listUsers, listChapters, updateUser } from "~/lib/api/admin";
+import { listUsers, listChapters, updateUser, deleteUser } from "~/lib/api/admin";
+import { ConfirmModal } from "~/components/ConfirmModal";
 import { ROLES, ROLE_LABELS, isSuperAdminRole, isEditorRole } from "~/lib/roles";
 import { formatDate } from "~/lib/utils";
 import type { User, Chapter } from "~/lib/types";
@@ -23,13 +24,18 @@ export async function clientLoader() {
 function UserRow({
   user,
   chapters,
+  canEdit,
   onSaved,
+  onDeleted,
 }: {
   user: User;
   chapters: Chapter[];
+  canEdit: boolean;
   onSaved: (updated: User) => void;
+  onDeleted: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [role, setRole] = useState<User["role"]>(user.role);
   const [chapterId, setChapterId] = useState<string>(user.chapter_id ?? "");
   const [saving, setSaving] = useState(false);
@@ -63,27 +69,49 @@ function UserRow({
 
   if (!editing) {
     return (
-      <tr className="border-t hover:bg-canvas group">
-        <td className="px-4 py-2.5 font-medium">{user.name}</td>
-        <td className="px-4 py-2.5 text-text-2">{user.email}</td>
-        <td className="px-4 py-2.5">
-          <RoleBadge role={user.role} />
-        </td>
-        <td className="px-4 py-2.5 text-text-3 text-xs">
-          {chapters.find((c) => c.id === user.chapter_id)?.name ?? (
-            <span className="italic text-text-3">none</span>
-          )}
-        </td>
-        <td className="px-4 py-2.5 text-text-3 text-xs">{formatDate(user.created_at)}</td>
-        <td className="px-4 py-2.5 text-right">
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-g-blue hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            Edit
-          </button>
-        </td>
-      </tr>
+      <>
+        <tr className="border-t hover:bg-canvas group">
+          <td className="px-4 py-2.5 font-medium">{user.name}</td>
+          <td className="px-4 py-2.5 text-text-2">{user.email}</td>
+          <td className="px-4 py-2.5">
+            <RoleBadge role={user.role} />
+          </td>
+          <td className="px-4 py-2.5 text-text-3 text-xs">
+            {chapters.find((c) => c.id === user.chapter_id)?.name ?? (
+              <span className="italic text-text-3">none</span>
+            )}
+          </td>
+          <td className="px-4 py-2.5 text-text-3 text-xs">{formatDate(user.created_at)}</td>
+          <td className="px-4 py-2.5 text-right space-x-3">
+            {canEdit && (
+              <>
+                <button
+                  onClick={() => setEditing(true)}
+                  className="text-xs text-g-blue hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-xs text-destructive hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </td>
+        </tr>
+        {confirmDelete && (
+          <ConfirmModal
+            title={`Delete ${user.name}?`}
+            message="This will permanently remove the user. They will need to be re-whitelisted to log in again."
+            destructive
+            confirmLabel="Delete"
+            onConfirm={async () => { await deleteUser(user.id); setConfirmDelete(false); onDeleted(user.id); }}
+            onCancel={() => setConfirmDelete(false)}
+          />
+        )}
+      </>
     );
   }
 
@@ -142,6 +170,8 @@ function UserRow({
 // ---------- Page ----------
 export default function UsersPage() {
   const { users: initial, chapters } = useLoaderData<typeof clientLoader>();
+  const { user } = useOutletContext<{ user: User }>();
+  const canEdit = isSuperAdminRole(user.role);
 
   const [users, setUsers] = useState<User[]>(initial ?? []);
   const [search, setSearch] = useState("");
@@ -151,6 +181,9 @@ export default function UsersPage() {
 
   const handleSaved = (updated: User) =>
     setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+
+  const handleDeleted = (id: string) =>
+    setUsers((prev) => prev.filter((u) => u.id !== id));
 
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -242,7 +275,7 @@ export default function UsersPage() {
               </TableRow>
             ) : (
               filtered.map((u) => (
-                <UserRow key={u.id} user={u} chapters={chapters ?? []} onSaved={handleSaved} />
+                <UserRow key={u.id} user={u} chapters={chapters ?? []} canEdit={canEdit} onSaved={handleSaved} onDeleted={handleDeleted} />
               ))
             )}
           </TableBody>

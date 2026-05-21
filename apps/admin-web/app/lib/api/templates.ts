@@ -34,6 +34,15 @@ export async function archiveTemplate(id: string): Promise<void> {
   await apiClient.post(`/templates/${id}/archive`);
 }
 
+export async function updateTemplateMeta(id: string, data: { name: string; description?: string }): Promise<void> {
+  await apiClient.patch(`/templates/${id}`, data);
+}
+
+export async function deleteTemplate(id: string): Promise<{ archived: boolean }> {
+  const res = await apiClient.delete<{ archived?: boolean }>(`/templates/${id}`);
+  return { archived: res.data?.archived === true };
+}
+
 export async function cloneTemplate(id: string, name?: string): Promise<Template> {
   const res = await apiClient.post<Template>(`/templates/${id}/clone`, { name: name ?? "" });
   return res.data;

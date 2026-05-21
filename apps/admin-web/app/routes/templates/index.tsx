@@ -61,8 +61,8 @@ export default function TemplatesPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {templates.map((t) => (
-            <Card key={t.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-5">
+            <Card key={t.id} className="hover:shadow-md transition-shadow flex flex-col">
+              <CardContent className="p-5 flex flex-col flex-1">
                 <div className="flex items-start justify-between mb-3">
                   <h2 className="font-semibold truncate text-foreground">{t.name}</h2>
                   <div className="flex gap-1 flex-shrink-0">
@@ -71,8 +71,12 @@ export default function TemplatesPage() {
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{t.description || "No description"}</p>
-                <div className="flex gap-2 text-xs text-muted-foreground justify-between">
-                  <span>Updated {formatDate(t.updated_at)}</span>
+                <div className="flex-1" />
+                <div className="flex items-center justify-between gap-2 pt-3 border-t border-border text-xs text-muted-foreground">
+                  <div className="flex flex-col gap-0.5">
+                    <span>Updated {formatDate(t.updated_at)}</span>
+                    {t.created_by_name && <span>By {t.created_by_name}</span>}
+                  </div>
                   <div className="flex gap-3">
                     <Link to={`/templates/${t.id}/editor`} className="text-primary hover:underline font-medium">
                       Edit

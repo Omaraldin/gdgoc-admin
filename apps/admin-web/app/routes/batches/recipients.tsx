@@ -8,6 +8,8 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api/v1";
+
 export function meta() {
   return [{ title: "Recipients | GDGoC Admin" }];
 }
@@ -46,7 +48,7 @@ export default function BatchRecipientsPage() {
                   <TableCell>{r.email}</TableCell>
                   <TableCell><RecipientBadge status={r.status} /></TableCell>
                   <TableCell className="font-mono text-xs">
-                    <a href={`/verify/${r.id}`} className="text-primary hover:underline" target="_blank" rel="noreferrer">{r.id}</a>
+                    <a href={`${API_BASE_URL}/verify/${r.id}/share`} className="text-primary hover:underline" target="_blank" rel="noreferrer">{r.id}</a>
                   </TableCell>
                   <TableCell className="text-destructive text-xs">{r.failure_reason ?? ""}</TableCell>
                   <TableCell className="text-right">

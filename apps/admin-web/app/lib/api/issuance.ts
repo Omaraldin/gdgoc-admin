@@ -1,5 +1,5 @@
 import { apiClient } from "./client";
-import type { IssuanceBatch, BatchRecipient, BatchProgress } from "~/lib/types";
+import type { IssuanceBatch, BatchRecipient, BatchProgress, CertificationGroup, CertMetadata } from "~/lib/types";
 
 export interface RecipientInput {
   email: string;
@@ -11,6 +11,8 @@ export interface RecipientInput {
 export interface CreateBatchPayload {
   template_id: string;
   name: string;
+  cert_id?: string;
+  cert_name?: string;
   recipients: Array<{ email: string; variables: Record<string, string> }>;
   send_mail: boolean;
   is_printable: boolean;
@@ -81,4 +83,33 @@ export async function listCertificates(batchId: string): Promise<CertificateEntr
 
 export async function deleteBatch(id: string): Promise<void> {
   await apiClient.delete(`/batches/${id}`);
+}
+
+export async function listCertNames(): Promise<string[]> {
+  const res = await apiClient.get<string[]>("/cert-names");
+  return res.data ?? [];
+}
+
+export async function listCertMetadata(): Promise<CertMetadata[]> {
+  const res = await apiClient.get<CertMetadata[]>("/cert-metadata");
+  return res.data ?? [];
+}
+
+export async function createCertMetadata(data: { name: string; description: string }): Promise<CertMetadata> {
+  const res = await apiClient.post<CertMetadata>("/cert-metadata", data);
+  return res.data;
+}
+
+export async function updateCertMetadata(id: string, data: { name: string; description: string }): Promise<CertMetadata> {
+  const res = await apiClient.patch<CertMetadata>(`/cert-metadata/${id}`, data);
+  return res.data;
+}
+
+export async function deleteCertMetadata(id: string): Promise<void> {
+  await apiClient.delete(`/cert-metadata/${id}`);
+}
+
+export async function listCertifications(): Promise<CertificationGroup[]> {
+  const res = await apiClient.get<CertificationGroup[]>("/certifications");
+  return res.data ?? [];
 }

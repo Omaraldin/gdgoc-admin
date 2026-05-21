@@ -33,6 +33,9 @@ func (s *Service) List(ctx context.Context, caller *auth.SessionUser) ([]*Templa
 		// Super admins see all templates across all chapters
 		return s.repo.ListAll(ctx)
 	}
+	if caller.ChapterID == "" {
+		return []*Template{}, nil
+	}
 	return s.repo.List(ctx, caller.ChapterID)
 }
 
@@ -57,6 +60,20 @@ func (s *Service) Create(ctx context.Context, input CreateTemplateInput, caller 
 	return s.repo.Create(ctx, input)
 }
 
+func (s *Service) UpdateMeta(ctx context.Context, id, name, description string, caller *auth.SessionUser) error {
+	tmpl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !s.canWrite(tmpl, caller) {
+		return apperrors.Forbidden("access denied")
+	}
+	if name == "" {
+		return apperrors.BadRequest("name is required")
+	}
+	return s.repo.UpdateMeta(ctx, id, name, description)
+}
+
 func (s *Service) Publish(ctx context.Context, id string, caller *auth.SessionUser) error {
 	tmpl, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -77,6 +94,26 @@ func (s *Service) Archive(ctx context.Context, id string, caller *auth.SessionUs
 		return apperrors.Forbidden("access denied")
 	}
 	return s.repo.SetStatus(ctx, id, StatusArchived)
+}
+
+// Delete hard-deletes the template if no batches reference it, otherwise archives it.
+// Returns a boolean indicating whether the template was archived (true) or deleted (false).
+func (s *Service) Delete(ctx context.Context, id string, caller *auth.SessionUser) (archived bool, err error) {
+	tmpl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if !s.canWrite(tmpl, caller) {
+		return false, apperrors.Forbidden("access denied")
+	}
+	hasBatches, err := s.repo.HasBatches(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if hasBatches {
+		return true, s.repo.SetStatus(ctx, id, StatusArchived)
+	}
+	return false, s.repo.HardDelete(ctx, id)
 }
 func (s *Service) Clone(ctx context.Context, sourceID, name string, caller *auth.SessionUser) (*Template, error) {
 	source, err := s.repo.GetByID(ctx, sourceID)
@@ -261,5 +298,5 @@ func (s *Service) canWrite(tmpl *Template, caller *auth.SessionUser) bool {
 	if auth.IsSuperAdmin(caller.Role) {
 		return true
 	}
-	return tmpl.OwnerChapterID == caller.ChapterID
+	return tmpl.OwnerUserID == caller.ID
 }

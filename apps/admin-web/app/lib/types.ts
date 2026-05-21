@@ -56,6 +56,7 @@ export interface SMTPStatus {
 export interface WhitelistEntry {
   id: string;
   email: string;
+  role: "super_admin" | "chapter_leader" | "editor";
   added_by: string;
   created_at: string;
 }
@@ -64,7 +65,7 @@ export interface WhitelistEntry {
 
 export type TemplateStatus = "draft" | "published" | "archived";
 export type TemplateVisibility = "private" | "public";
-export type LayerType = "text" | "image" | "shape";
+export type LayerType = "text" | "image" | "shape" | "qr";
 export type ShapeKind = "rect" | "rounded-rect" | "circle" | "line" | "path";
 export type GradientType = "linear" | "radial";
 export type StrokeAlignment = "inside" | "center" | "outside";
@@ -129,6 +130,7 @@ export interface Template {
   status: TemplateStatus;
   source_template_id: string | null;
   current_version_id: string | null;
+  created_by_name: string;
   created_at: string;
   updated_at: string;
 }
@@ -161,6 +163,23 @@ export interface Layer {
   text_props?: TextProps;
   image_props?: ImageProps;
   shape_props?: ShapeProps;
+  qr_props?: QrProps;
+}
+
+export type QrErrorCorrectionLevel = "L" | "M" | "Q" | "H";
+
+export interface QrProps {
+  /**
+   * The text that will be encoded as a QR code.
+   * Supports {{variable}} interpolation — e.g. "{{cert.verify_url}}".
+   */
+  content: string;
+  /** Foreground (module) colour. Default #000000. */
+  color_dark: string;
+  /** Background colour. Default #ffffff. */
+  color_light: string;
+  /** Error-correction level. Default "M". */
+  error_correction: QrErrorCorrectionLevel;
 }
 
 export interface TextProps {
@@ -196,12 +215,24 @@ export interface ImageProps {
 export type BatchStatus = "pending" | "processing" | "completed" | "cancelled" | "failed";
 export type RecipientStatus = "queued" | "rendering" | "rendered" | "emailed" | "failed" | "revoked";
 
+export interface CertMetadata {
+  id: string;
+  chapter_id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface IssuanceBatch {
   id: string;
   chapter_id: string;
   template_id: string;
   template_version_id: string;
   name: string;
+  cert_id?: string;
+  cert_name?: string;
+  cert_description?: string;
   status: BatchStatus;
   send_mail: boolean;
   is_printable: boolean;
@@ -209,8 +240,16 @@ export interface IssuanceBatch {
   success_count: number;
   failed_count: number;
   created_by_user_id: string;
+  created_by_name: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CertificationGroup {
+  cert_id?: string;
+  cert_name: string;
+  description?: string;
+  batches: IssuanceBatch[];
 }
 
 export interface BatchRecipient {
@@ -244,9 +283,14 @@ export interface VerificationResult {
   recipient_email?: string;
   recipient_name?: string;
   template_name?: string;
+  batch_name?: string;
+  cert_name?: string;
   chapter_name?: string;
   issued_at?: string;
   status: string;
+  preview_image_url?: string;
+  verify_url?: string;
+  share_url?: string;
 }
 
 // --- Dynamic Images ---
@@ -263,6 +307,7 @@ export interface DynamicImage {
   status: "draft" | "published";
   owner_user_id: string;
   owner_chapter_id: string;
+  created_by_name: string;
   scene: SceneDefinition;
   created_at: string;
   updated_at: string;

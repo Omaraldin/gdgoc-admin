@@ -25,7 +25,7 @@ func resolveTextContent(p *tmpl.TextProps, vars map[string]string) string {
 		}
 		return content
 	}
-	return interpolate(content, vars)
+	return Interpolate(content, vars)
 }
 
 // ExtractInterpolatedVariableKeys returns unique variable keys referenced by
@@ -50,7 +50,7 @@ func ExtractInterpolatedVariableKeys(content string) []string {
 	return out
 }
 
-func interpolate(content string, vars map[string]string) string {
+func Interpolate(content string, vars map[string]string) string {
 	if content == "" || len(vars) == 0 {
 		return content
 	}

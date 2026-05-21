@@ -110,7 +110,7 @@ func (r *Repository) Create(ctx context.Context, input CreateChapterInput) (*Cha
 	var ch Chapter
 	err := r.db.WithContext(ctx).Raw(`
 		INSERT INTO chapters (name, email, code, since_year, leader_codename, smtp_password, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())
+		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, 'active', NOW(), NOW())
 		RETURNING id, name, code, since_year, leader_codename, email, smtp_provider, smtp_host, smtp_port, smtp_username, smtp_password,
 		          leader_id, status, profile_picture_url, created_at, updated_at
 	`, input.Name, input.Email, input.Code, input.SinceYear, input.LeaderCodename, input.SmtpPassword,
@@ -144,7 +144,7 @@ func (r *Repository) Update(ctx context.Context, id string, input UpdateChapterI
 func (r *Repository) GetSMTPConfig(ctx context.Context, chapterID string) (*mail.SMTPConfig, error) {
 	var row struct {
 		Name              string  `gorm:"column:name"`
-		Email             string  `gorm:"column:email"`
+		Email             *string `gorm:"column:email"`
 		SmtpProvider      string  `gorm:"column:smtp_provider"`
 		SmtpHost          *string `gorm:"column:smtp_host"`
 		SmtpPort          *int    `gorm:"column:smtp_port"`
@@ -156,7 +156,7 @@ func (r *Repository) GetSMTPConfig(ctx context.Context, chapterID string) (*mail
 		SELECT name, email, smtp_provider, smtp_host, smtp_port, smtp_username, smtp_password, oauth_refresh_token
 		FROM chapters WHERE id = ? AND deleted_at IS NULL`, chapterID,
 	).Scan(&row).Error
-	if err != nil || row.Email == "" {
+	if err != nil || row.Name == "" {
 		return nil, fmt.Errorf("chapter not found")
 	}
 
@@ -167,7 +167,7 @@ func (r *Repository) GetSMTPConfig(ctx context.Context, chapterID string) (*mail
 
 	cfg := &mail.SMTPConfig{
 		Provider:    provider,
-		FromEmail:   ptrStringOr(row.SmtpUsername, row.Email),
+		FromEmail:   ptrStringOr(row.SmtpUsername, ptrStringOr(row.Email, "")),
 		ChapterName: row.Name,
 	}
 
@@ -183,7 +183,7 @@ func (r *Repository) GetSMTPConfig(ctx context.Context, chapterID string) (*mail
 		}
 		cfg.Host = *row.SmtpHost
 		cfg.Port = intPtrOr(row.SmtpPort, 587)
-		cfg.Username = ptrStringOr(row.SmtpUsername, row.Email)
+		cfg.Username = ptrStringOr(row.SmtpUsername, ptrStringOr(row.Email, ""))
 		if row.SmtpPassword == nil || *row.SmtpPassword == "" {
 			return nil, fmt.Errorf("chapter %s has no smtp_password configured", chapterID)
 		}

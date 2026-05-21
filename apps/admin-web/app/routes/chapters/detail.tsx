@@ -418,13 +418,11 @@ export default function ChapterDetailPage() {
 
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4">
-          {chapter.profile_picture_url ? (
-            <img src={chapter.profile_picture_url} alt={chapter.name} className="w-14 h-14 rounded-full object-cover" />
-          ) : (
-            <div className="w-14 h-14 rounded-full bg-accent flex items-center justify-center">
-              <span className="text-primary font-semibold text-2xl">{chapter.name.charAt(0).toUpperCase()}</span>
-            </div>
-          )}
+          <img
+            src={chapter.profile_picture_url ?? "/avatar.png"}
+            alt={chapter.name}
+            className="w-14 h-14 rounded-full object-cover"
+          />
           <h1 className="text-xl font-semibold text-foreground">{chapter.name}</h1>
         </div>
         <div className="flex gap-2 items-center">

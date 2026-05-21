@@ -15,8 +15,8 @@ func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) List(ctx context.Context) ([]*User, error) {
-	return s.repo.List(ctx)
+func (s *Service) List(ctx context.Context, chapterID *string) ([]*User, error) {
+	return s.repo.List(ctx, chapterID)
 }
 
 func (s *Service) Get(ctx context.Context, id string) (*User, error) {
@@ -34,14 +34,17 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, id)
 }
 
-func (s *Service) ListWhitelist(ctx context.Context) ([]*WhitelistEntry, error) {
-	return s.repo.ListWhitelist(ctx)
+func (s *Service) ListWhitelist(ctx context.Context, chapterID *string) ([]*WhitelistEntry, error) {
+	return s.repo.ListWhitelist(ctx, chapterID)
 }
 
-func (s *Service) AddToWhitelist(ctx context.Context, email string, addedBy string) (*WhitelistEntry, error) {
-	return s.repo.AddToWhitelist(ctx, email, addedBy)
+func (s *Service) AddToWhitelist(ctx context.Context, email, role, addedBy string, chapterID *string) (*WhitelistEntry, error) {
+	if !auth.IsValidRole(role) {
+		return nil, apperrors.BadRequest("invalid role")
+	}
+	return s.repo.AddToWhitelist(ctx, email, role, addedBy, chapterID)
 }
 
-func (s *Service) RemoveFromWhitelist(ctx context.Context, id string) error {
-	return s.repo.RemoveFromWhitelist(ctx, id)
+func (s *Service) RemoveFromWhitelist(ctx context.Context, id string, callerChapterID *string) error {
+	return s.repo.RemoveFromWhitelist(ctx, id, callerChapterID)
 }

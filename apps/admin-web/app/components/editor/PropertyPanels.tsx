@@ -1,9 +1,53 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Variable } from "lucide-react";
-import type { Layer as LayerModel, TextProps, ImageProps, ShapeProps, ShapeKind, GradientStop, StrokeAlignment, StrokeLineCap, StrokeLineJoin } from "~/lib/types";
+import type { Layer as LayerModel, TextProps, ImageProps, ShapeProps, ShapeKind, GradientStop, StrokeAlignment, StrokeLineCap, StrokeLineJoin, QrProps, QrErrorCorrectionLevel } from "~/lib/types";
 import { loadGoogleFont, loadCustomFontFile, getCustomFonts, subscribeCustomFonts } from "~/lib/fonts";
 import { FontPicker, WeightPicker } from "~/components/FontPicker";
 import { ColorPicker } from "./ColorPicker";
+
+// ---------- Shared variable catalogue ----------
+// Single source of truth used by TextPropsPanel (content chips)
+// and QrPropsPanel (content chips). Mirrors the variable_key select options.
+
+export const ALL_DYNAMIC_VARIABLES: { group: string; vars: { key: string; label: string }[] }[] = [
+  {
+    group: "Recipient",
+    vars: [
+      { key: "recipient_name", label: "recipient_name" },
+      { key: "event_name",     label: "event_name" },
+      { key: "issue_date",     label: "issue_date" },
+    ],
+  },
+  {
+    group: "Certificate",
+    vars: [
+      { key: "cert.id",         label: "cert.id" },
+      { key: "cert.pdf_url",    label: "cert.pdf_url" },
+      { key: "cert.verify_url", label: "cert.verify_url" },
+    ],
+  },
+  {
+    group: "Batch",
+    vars: [
+      { key: "batch.name",             label: "batch.name" },
+      { key: "batch.cert_name",        label: "batch.cert_name" },
+      { key: "batch.cert_description", label: "batch.cert_description" },
+    ],
+  },
+  {
+    group: "Chapter",
+    vars: [
+      { key: "chapter.name",            label: "chapter.name" },
+      { key: "chapter.leader",          label: "chapter.leader" },
+      { key: "chapter.leader_codename", label: "chapter.leader_codename" },
+      { key: "chapter.code",            label: "chapter.code" },
+      { key: "chapter.since",           label: "chapter.since" },
+    ],
+  },
+];
+
+/** Flat list of every variable key (for simple chip rows). */
+const ALL_VARS_FLAT = ALL_DYNAMIC_VARIABLES.flatMap((g) => g.vars);
 
 // ---------- NumField ----------
 
@@ -137,12 +181,30 @@ export function TextPropsPanel({ props, onUpdate }: {
   const set = <K extends keyof TextProps>(key: K, value: TextProps[K]) =>
     onUpdate({ ...props, [key]: value });
 
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Insert {{variable}} at cursor inside the content textarea. */
+  const insertContentVar = (key: string) => {
+    const el = contentRef.current;
+    const token = `{{${key}}}`;
+    if (!el) { set("content", props.content + token); return; }
+    const start = el.selectionStart ?? props.content.length;
+    const end   = el.selectionEnd   ?? props.content.length;
+    const next  = props.content.slice(0, start) + token + props.content.slice(end);
+    set("content", next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
+
   return (
     <div className="space-y-2 pt-2 border-t">
       <h4 className="text-xs font-semibold text-text-2">Text</h4>
       <label className="block text-xs text-text-2">
         Content
         <textarea
+          ref={contentRef}
           rows={2}
           className="mt-1 w-full border rounded px-2 py-1 text-sm"
           value={props.content}
@@ -151,9 +213,28 @@ export function TextPropsPanel({ props, onUpdate }: {
         />
       </label>
       {!props.is_dynamic && (
-        <p className="text-[11px] text-text-3">
-          Use <span className="font-mono">{"{{field_name}}"}</span> to inject dynamic values, e.g. <span className="font-mono">{"Hello {{name}}"}</span>.
-        </p>
+        <>
+          <p className="text-[11px] text-text-3">
+            Use <span className="font-mono">{"{{field_name}}"}</span> to inject dynamic values.
+          </p>
+          {/* Variable chip insertion for content field */}
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-text-3 mb-1">Insert variable</p>
+            <div className="flex flex-wrap gap-1">
+              {ALL_VARS_FLAT.map((v) => (
+                <button
+                  key={v.key}
+                  type="button"
+                  title={`Insert {{${v.key}}}`}
+                  onClick={() => insertContentVar(v.key)}
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                >
+                  {`{{${v.label}}}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       <label className="block text-xs text-text-2">
@@ -271,6 +352,13 @@ export function TextPropsPanel({ props, onUpdate }: {
             </optgroup>
             <optgroup label="Certificate (auto-filled)">
               <option value="cert.id">cert.id</option>
+              <option value="cert.pdf_url">cert.pdf_url</option>
+              <option value="cert.verify_url">cert.verify_url</option>
+            </optgroup>
+            <optgroup label="Batch">
+              <option value="batch.name">batch.name</option>
+              <option value="batch.cert_name">batch.cert_name</option>
+              <option value="batch.cert_description">batch.cert_description</option>
             </optgroup>
             <optgroup label="Chapter (auto-filled)">
               <option value="chapter.name">chapter.name</option>
@@ -280,7 +368,7 @@ export function TextPropsPanel({ props, onUpdate }: {
               <option value="chapter.since">chapter.since</option>
             </optgroup>
           </select>
-          {(props.variable_key === "" || props.variable_key === undefined || !["recipient_name","event_name","issue_date","cert.id","chapter.name","chapter.leader","chapter.leader_codename","chapter.code","chapter.since"].includes(props.variable_key)) && (
+          {(props.variable_key === "" || props.variable_key === undefined || !["recipient_name","event_name","issue_date","cert.id","cert.pdf_url","chapter.name","chapter.leader","chapter.leader_codename","chapter.code","chapter.since"].includes(props.variable_key)) && (
             <input
               className="w-full border rounded px-2 py-1 text-xs font-mono"
               value={props.variable_key ?? ""}
@@ -507,6 +595,135 @@ export function ShapePropsPanel({ props, onUpdate }: {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- QrPropsPanel ----------
+
+const EC_LEVELS: { value: QrErrorCorrectionLevel; label: string; hint: string }[] = [
+  { value: "L", label: "L", hint: "~7% recovery" },
+  { value: "M", label: "M", hint: "~15% recovery" },
+  { value: "Q", label: "Q", hint: "~25% recovery" },
+  { value: "H", label: "H", hint: "~30% recovery" },
+];
+
+export function QrPropsPanel({ props, onUpdate }: {
+  props: QrProps;
+  onUpdate: (p: QrProps) => void;
+}) {
+  const set = <K extends keyof QrProps>(key: K, value: QrProps[K]) =>
+    onUpdate({ ...props, [key]: value });
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Insert a {{variable}} chip at the current cursor position in the textarea. */
+  const insertVar = (variable: string) => {
+    const el = textareaRef.current;
+    const insertion = `{{${variable}}}`;
+    if (!el) {
+      set("content", props.content + insertion);
+      return;
+    }
+    const start = el.selectionStart ?? props.content.length;
+    const end   = el.selectionEnd   ?? props.content.length;
+    const next  = props.content.slice(0, start) + insertion + props.content.slice(end);
+    set("content", next);
+    requestAnimationFrame(() => {
+      const pos = start + insertion.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  return (
+    <div className="space-y-3 pt-2 border-t">
+      <h4 className="text-xs font-semibold text-text-2 flex items-center gap-1.5">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+        QR Code
+      </h4>
+
+      {/* Content / URL */}
+      <label className="block text-xs text-text-2">
+        Content (URL or text)
+        <textarea
+          ref={textareaRef}
+          rows={3}
+          className="mt-1 w-full border rounded px-2 py-1.5 text-xs font-mono resize-none focus:outline-none focus:ring-2 focus:ring-g-blue/40"
+          value={props.content}
+          placeholder="https://example.com or {{cert.verify_url}}"
+          onChange={(e) => set("content", e.target.value)}
+        />
+      </label>
+
+      {/* Variable chip insertion — all known variables */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-text-3 mb-1">Insert variable</p>
+        {ALL_DYNAMIC_VARIABLES.map((group) => (
+          <div key={group.group} className="mb-2">
+            <p className="text-[9px] uppercase tracking-wider text-text-3 mb-0.5">{group.group}</p>
+            <div className="flex flex-wrap gap-1">
+              {group.vars.map((v) => (
+                <button
+                  key={v.key}
+                  type="button"
+                  title={`Insert {{${v.key}}}`}
+                  onClick={() => insertVar(v.key)}
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                >
+                  {`{{${v.key}}}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Colors */}
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block text-xs text-text-2">
+          Foreground
+          <div className="mt-1 flex items-center gap-1.5">
+            <ColorPicker value={props.color_dark} onChange={(v) => set("color_dark", v)} />
+            <span className="text-xs text-text-3 font-mono uppercase">{props.color_dark}</span>
+          </div>
+        </label>
+        <label className="block text-xs text-text-2">
+          Background
+          <div className="mt-1 flex items-center gap-1.5">
+            <ColorPicker value={props.color_light} onChange={(v) => set("color_light", v)} />
+            <span className="text-xs text-text-3 font-mono uppercase">{props.color_light}</span>
+          </div>
+        </label>
+      </div>
+
+      {/* Error correction */}
+      <div>
+        <p className="text-xs text-text-2 mb-1">Error Correction</p>
+        <div className="grid grid-cols-4 gap-1">
+          {EC_LEVELS.map((ec) => (
+            <button
+              key={ec.value}
+              type="button"
+              title={ec.hint}
+              onClick={() => set("error_correction", ec.value)}
+              className={`text-xs border rounded py-1 font-mono ${
+                props.error_correction === ec.value
+                  ? "bg-g-blue text-white border-g-blue"
+                  : "hover:bg-canvas"
+              }`}
+            >
+              {ec.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] text-text-3">
+          Higher = more data recovery, denser pattern.
+        </p>
+      </div>
     </div>
   );
 }

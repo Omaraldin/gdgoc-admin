@@ -1,7 +1,7 @@
-import { Eye, EyeOff, Image, Shapes, Type, Variable, X } from "lucide-react";
+import { Eye, EyeOff, Image, QrCode, Shapes, Type, Variable, X } from "lucide-react";
 import type { Layer as LayerModel, ShapeProps } from "~/lib/types";
 import type { BooleanOp } from "~/lib/booleanOps";
-import { CommonTransformPanel, TextPropsPanel, ImagePropsPanel, ShapePropsPanel } from "./PropertyPanels";
+import { CommonTransformPanel, TextPropsPanel, ImagePropsPanel, ShapePropsPanel, QrPropsPanel } from "./PropertyPanels";
 
 // ---------- BooleanOpsPanel ----------
 
@@ -74,6 +74,8 @@ export function LayerList({ layers, selectedId, extraSelectedIds, onSelect, onTo
                 )
               ) : layer.type === "image" ? (
                 <><Image size={11} className="shrink-0" />{layer.image_props?.asset_key?.split("/").at(-1)}</>
+              ) : layer.type === "qr" ? (
+                <><QrCode size={11} className="shrink-0" />{layer.qr_props?.content?.slice(0, 20) || "QR Code"}</>
               ) : (
                 <><Shapes size={11} className="shrink-0" />{layer.shape_props?.kind}</>  
               )}
@@ -134,6 +136,9 @@ export function PropertiesPanel({ layer, onUpdate, onReorder, onDuplicate, onRem
       )}
       {layer.type === "shape" && layer.shape_props && (
         <ShapePropsPanel props={layer.shape_props} onUpdate={(p) => onUpdate({ shape_props: p })} />
+      )}
+      {layer.type === "qr" && layer.qr_props && (
+        <QrPropsPanel props={layer.qr_props} onUpdate={(p) => onUpdate({ qr_props: p })} />
       )}
 
       <button type="button" onClick={onRemove} className="w-full text-sm text-red-600 hover:text-red-800 border border-red-200 rounded px-3 py-1.5">

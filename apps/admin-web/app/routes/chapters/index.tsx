@@ -28,17 +28,11 @@ export default function ChaptersPage() {
           <Card key={ch.id}>
             <CardContent className="p-5">
               <div className="flex items-start gap-4">
-                {ch.profile_picture_url ? (
-                  <img
-                    src={ch.profile_picture_url}
+                <img
+                    src={ch.profile_picture_url ?? "/avatar.png"}
                     alt={ch.name}
                     className="w-10 h-10 rounded-full object-cover flex-shrink-0"
                   />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
-                    <span className="text-primary font-semibold text-sm">{ch.name.charAt(0).toUpperCase()}</span>
-                  </div>
-                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <h2 className="font-semibold truncate text-foreground">{ch.name}</h2>

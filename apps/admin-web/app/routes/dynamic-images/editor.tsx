@@ -58,6 +58,7 @@ export default function DynamicImageEditorPage() {
 
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [name, setName] = useState(image.name);
     const [pendingFiles, setPendingFiles] = useState<Record<string, { file: File; blobUrl: string }>>({});
     const [transitionBlobs, setTransitionBlobs] = useState<Record<string, string>>({});
     const [uploadingCount, setUploadingCount] = useState(0);
@@ -143,7 +144,7 @@ export default function DynamicImageEditorPage() {
             }
 
             await updateDynamicImage(image.id, {
-                name: image.name,
+                name: name.trim() || image.name,
                 description: image.description,
                 scene: currentScene,
             });
@@ -165,7 +166,12 @@ export default function DynamicImageEditorPage() {
                     >
                         ← Back
                     </button>
-                    <h1 className="font-semibold">{image.name}</h1>
+                    <input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="font-semibold bg-transparent border-b border-transparent hover:border-border focus:border-border focus:outline-none px-0.5 min-w-0 max-w-xs"
+                        aria-label="Image name"
+                    />
                     <span className="text-xs text-text-3">
                         Dynamic Image · {scene.width} × {scene.height}
                         {Object.keys(pendingFiles).length > 0 && (

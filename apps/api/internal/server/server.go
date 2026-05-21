@@ -48,7 +48,11 @@ func New(
 	})
 
 	app.Use(recover.New())
-	app.Use(helmet.New())
+	app.Use(helmet.New(helmet.Config{
+		// Allow cross-origin resource loading so Vercel frontend can load
+		// images and certificates served by this API.
+		CrossOriginResourcePolicy: "cross-origin",
+	}))
 	app.Use(logger.New())
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     cfg.CORS.AllowedOrigins,
@@ -121,11 +125,12 @@ func New(
 		imageRenderer,
 		worker.ToPDFBytes,
 		cfg.PublicURL,
+		cfg.FrontendURL,
 	)
 	issuanceH := issuance.NewHandler(issuanceSvc)
 
 	verificationRepo := verification.NewRepository(db)
-	verificationSvc := verification.NewService(verificationRepo)
+	verificationSvc := verification.NewService(verificationRepo, cfg.PublicURL)
 	verificationH := verification.NewHandler(verificationSvc)
 
 	mailSvc := mail.NewService(mailQ)
@@ -194,10 +199,11 @@ func New(
 	})
 
 	// ── public routes ─────────────────────────────────────────────────────────
-	api.Get("/health", healthCheck)                                                  // [public] health check
-	api.Get("/verify/:code", publicLimiter, verificationH.VerifyCertificate)        // [public] verify certificate by code
+	api.Get("/health", healthCheck)                                          // [public] health check
+	api.Get("/verify/:code", publicLimiter, verificationH.VerifyCertificate) // [public] verify certificate by code
+	api.Get("/verify/:code/share", publicLimiter, verificationH.VerifySharePage)
 	// Dynamic image render — public, no auth required
-	api.Get("/images/:id", publicLimiter, dynImgH.Render)                        // [public] render dynamic image
+	api.Get("/images/:id", publicLimiter, dynImgH.Render)                           // [public] render dynamic image
 	api.Get("/certificates/:id/render", publicLimiter, issuanceH.RenderCertificate) // [public] render certificate on demand
 
 	// ── auth ──────────────────────────────────────────────────────────────────
@@ -213,30 +219,30 @@ func New(
 	protected.Get("/me", authH.Me) // [authenticated] current user profile
 
 	// ── users ─────────────────────────────────────────────────────────────────
-	usersGroup := protected.Group("/users", requireSuperAdmin)
-	usersGroup.Get("/", userH.List)        // [super_admin] list all users
-	usersGroup.Get("/:id", userH.Get)      // [super_admin] get user by id
-	usersGroup.Post("/", userH.Create)     // [super_admin] create user
-	usersGroup.Patch("/:id", userH.Update) // [super_admin] update user
-	usersGroup.Delete("/:id", userH.Delete) // [super_admin] delete user
+	protected.Get("/users", userH.List) // [authenticated] list users (chapter leaders see own chapter only)
+	usersAdmin := protected.Group("/users", requireSuperAdmin)
+	usersAdmin.Get("/:id", userH.Get)       // [super_admin] get user by id
+	usersAdmin.Post("/", userH.Create)      // [super_admin] create user
+	usersAdmin.Patch("/:id", userH.Update)  // [super_admin] update user
+	usersAdmin.Delete("/:id", userH.Delete) // [super_admin] delete user
 
 	// ── whitelist ─────────────────────────────────────────────────────────────
-	whitelistGroup := protected.Group("/whitelist", requireSuperAdmin)
-	whitelistGroup.Get("/", userH.ListWhitelist)          // [super_admin] list whitelist entries
-	whitelistGroup.Post("/", userH.AddToWhitelist)        // [super_admin] add email to whitelist
-	whitelistGroup.Delete("/:id", userH.RemoveFromWhitelist) // [super_admin] remove entry from whitelist
+	// Chapter leaders can manage whitelist entries scoped to their own chapter
+	protected.Get("/whitelist", userH.ListWhitelist)              // [authenticated] list whitelist entries
+	protected.Post("/whitelist", userH.AddToWhitelist)            // [authenticated] add email to whitelist
+	protected.Delete("/whitelist/:id", userH.RemoveFromWhitelist) // [authenticated] remove entry from whitelist
 
 	// ── chapters ──────────────────────────────────────────────────────────────
-	protected.Get("/chapters", chapterH.List)     // [authenticated] list chapters
-	protected.Get("/chapters/:id", chapterH.Get)  // [authenticated] get chapter by id
+	protected.Get("/chapters", chapterH.List)    // [authenticated] list chapters
+	protected.Get("/chapters/:id", chapterH.Get) // [authenticated] get chapter by id
 
-	protected.Patch("/chapters/:id", middleware.RequireChapterLeaderAccess(), chapterH.Update)               // [chapter_leader(own) | super_admin] update chapter details
-	protected.Get("/chapters/:id/smtp", middleware.RequireChapterAccess(), chapterH.GetSMTPStatus)            // [chapter_leader(own) | super_admin] get SMTP status
+	protected.Patch("/chapters/:id", middleware.RequireChapterLeaderAccess(), chapterH.Update)                             // [chapter_leader(own) | super_admin] update chapter details
+	protected.Get("/chapters/:id/smtp", middleware.RequireChapterAccess(), chapterH.GetSMTPStatus)                         // [chapter_leader(own) | super_admin] get SMTP status
 	protected.Patch("/chapters/:id/leader-profile", middleware.RequireChapterLeaderAccess(), chapterH.UpdateLeaderProfile) // [chapter_leader(own) | super_admin] update leader profile
-	protected.Patch("/chapters/:id/smtp", middleware.RequireChapterAccess(), chapterH.UpdateSMTP)             // [chapter_leader(own) | super_admin] set SMTP credentials
-	protected.Delete("/chapters/:id/smtp", middleware.RequireChapterAccess(), chapterH.DisconnectSMTP)        // [chapter_leader(own) | super_admin] disconnect SMTP
-	protected.Get("/chapters/:id/smtp/oauth/connect", middleware.RequireChapterAccess(), chapterH.OAuthConnectURL) // [chapter_leader(own) | super_admin] get OAuth2 authorization URL
-	api.Get("/chapters/smtp/oauth/callback", chapterH.OAuthCallback) // [public] OAuth2 provider redirect (no session cookie available)
+	protected.Patch("/chapters/:id/smtp", middleware.RequireChapterAccess(), chapterH.UpdateSMTP)                          // [chapter_leader(own) | super_admin] set SMTP credentials
+	protected.Delete("/chapters/:id/smtp", middleware.RequireChapterAccess(), chapterH.DisconnectSMTP)                     // [chapter_leader(own) | super_admin] disconnect SMTP
+	protected.Get("/chapters/:id/smtp/oauth/connect", middleware.RequireChapterAccess(), chapterH.OAuthConnectURL)         // [chapter_leader(own) | super_admin] get OAuth2 authorization URL
+	api.Get("/chapters/smtp/oauth/callback", chapterH.OAuthCallback)                                                       // [public] OAuth2 provider redirect (no session cookie available)
 
 	chaptersAdmin := protected.Group("/chapters", requireSuperAdmin)
 	chaptersAdmin.Post("/", chapterH.Create)                                  // [super_admin] create chapter
@@ -245,61 +251,68 @@ func New(
 	chaptersAdmin.Post("/:id/profile-picture", chapterH.UploadProfilePicture) // [super_admin] upload chapter profile picture
 
 	// ── templates ─────────────────────────────────────────────────────────────
-	protected.Get("/templates", tmplH.List)                                      // [authenticated] list templates
-	protected.Get("/templates/public", tmplH.ListPublic)                         // [authenticated] list published templates
-	protected.Post("/templates/import", tmplH.Import)                            // [authenticated] import template from JSON
-	protected.Get("/templates/:id", tmplH.Get)                                   // [authenticated] get template by id
-	protected.Post("/templates", tmplH.Create)                                   // [authenticated] create template
-	protected.Patch("/templates/:id", tmplH.Update)                              // [authenticated] update template
-	protected.Delete("/templates/:id", tmplH.Delete)                             // [authenticated] delete template
-	protected.Get("/templates/:id/export", tmplH.Export)                         // [authenticated] export template as JSON
-	protected.Post("/templates/:id/publish", tmplH.Publish)                      // [authenticated] publish template
-	protected.Post("/templates/:id/archive", tmplH.Archive)                      // [authenticated] archive template
-	protected.Post("/templates/:id/clone", tmplH.Clone)                          // [authenticated] clone template
-	protected.Post("/templates/:id/assets", tmplH.UploadAsset)                   // [authenticated] upload template asset
-	protected.Get("/templates/:id/versions", tmplH.ListVersions)                 // [authenticated] list template versions
-	protected.Post("/templates/:id/versions", tmplH.CreateVersion)               // [authenticated] create template version
-	protected.Get("/templates/:id/versions/:versionId", tmplH.GetVersion)        // [authenticated] get specific template version
+	protected.Get("/templates", tmplH.List)                               // [authenticated] list templates
+	protected.Get("/templates/public", tmplH.ListPublic)                  // [authenticated] list published templates
+	protected.Post("/templates/import", tmplH.Import)                     // [authenticated] import template from JSON
+	protected.Get("/templates/:id", tmplH.Get)                            // [authenticated] get template by id
+	protected.Post("/templates", tmplH.Create)                            // [authenticated] create template
+	protected.Patch("/templates/:id", tmplH.Update)                       // [authenticated] update template
+	protected.Delete("/templates/:id", tmplH.Delete)                      // [authenticated] delete template
+	protected.Get("/templates/:id/export", tmplH.Export)                  // [authenticated] export template as JSON
+	protected.Post("/templates/:id/publish", tmplH.Publish)               // [authenticated] publish template
+	protected.Post("/templates/:id/archive", tmplH.Archive)               // [authenticated] archive template
+	protected.Post("/templates/:id/clone", tmplH.Clone)                   // [authenticated] clone template
+	protected.Post("/templates/:id/assets", tmplH.UploadAsset)            // [authenticated] upload template asset
+	protected.Get("/templates/:id/versions", tmplH.ListVersions)          // [authenticated] list template versions
+	protected.Post("/templates/:id/versions", tmplH.CreateVersion)        // [authenticated] create template version
+	protected.Get("/templates/:id/versions/:versionId", tmplH.GetVersion) // [authenticated] get specific template version
 
 	// ── certificate issuance ──────────────────────────────────────────────────
-	protected.Get("/batches", issuanceH.ListBatches)                           // [authenticated] own-chapter only; super_admin sees all
-	protected.Get("/batches/:id", issuanceH.GetBatch)                          // [authenticated] own-chapter | super_admin
-	protected.Post("/batches", issuanceH.CreateBatch)                          // [authenticated] batch scoped to caller's chapter
-	protected.Get("/batches/:id/recipients", issuanceH.ListRecipients)         // [authenticated] own-chapter | super_admin
-	protected.Get("/batches/:id/progress", issuanceH.GetProgress)              // [authenticated] own-chapter | super_admin
-	protected.Get("/batches/:id/certificates", issuanceH.ListCertificates)     // [authenticated] own-chapter | super_admin
-	protected.Post("/batches/:id/cancel", issuanceH.CancelBatch)               // [authenticated] own-chapter | super_admin
-	protected.Delete("/batches/:id", issuanceH.DeleteBatch)                    // [authenticated] own-chapter | super_admin
-	protected.Get("/batches/:id/download", issuanceH.DownloadArchive)          // [authenticated] own-chapter | super_admin
-	protected.Get("/certificates/:id", issuanceH.GetCertificate)               // [authenticated] own-chapter | super_admin
-	protected.Post("/certificates/:id/revoke", issuanceH.RevokeCertificate)    // [authenticated] own-chapter | super_admin
+	protected.Get("/batches", issuanceH.ListBatches)                        // [authenticated] own-chapter only; super_admin sees all
+	protected.Get("/batches/:id", issuanceH.GetBatch)                       // [authenticated] own-chapter | super_admin
+	protected.Post("/batches", issuanceH.CreateBatch)                       // [authenticated] batch scoped to caller's chapter
+	protected.Get("/batches/:id/recipients", issuanceH.ListRecipients)      // [authenticated] own-chapter | super_admin
+	protected.Get("/batches/:id/progress", issuanceH.GetProgress)           // [authenticated] own-chapter | super_admin
+	protected.Get("/batches/:id/certificates", issuanceH.ListCertificates)  // [authenticated] own-chapter | super_admin
+	protected.Post("/batches/:id/cancel", issuanceH.CancelBatch)            // [authenticated] own-chapter | super_admin
+	protected.Delete("/batches/:id", issuanceH.DeleteBatch)                 // [authenticated] own-chapter | super_admin
+	protected.Get("/batches/:id/download", issuanceH.DownloadArchive)       // [authenticated] own-chapter | super_admin
+	protected.Get("/cert-names", issuanceH.ListCertNames)                   // [authenticated] distinct cert_name values for caller's chapter
+	protected.Get("/cert-metadata", issuanceH.ListCertMetadata)             // [authenticated] list cert metadata for caller's chapter
+	protected.Post("/cert-metadata", issuanceH.CreateCertMetadata)          // [authenticated] create cert metadata
+	protected.Patch("/cert-metadata/:id", issuanceH.UpdateCertMetadata)     // [authenticated] update cert metadata by id
+	protected.Delete("/cert-metadata/:id", issuanceH.DeleteCertMetadata)    // [authenticated] delete cert metadata by id
+	protected.Get("/certifications", issuanceH.ListCertifications)          // [authenticated] batches grouped by cert_name
+	protected.Get("/certificates/:id", issuanceH.GetCertificate)            // [authenticated] own-chapter | super_admin
+	protected.Post("/certificates/:id/revoke", issuanceH.RevokeCertificate) // [authenticated] own-chapter | super_admin
 
 	// ── mail ──────────────────────────────────────────────────────────────────
-	protected.Post("/mail/send", mailH.Send)       // [authenticated] send mail
-	protected.Get("/mail/history", mailH.History)  // [authenticated] mail send history
+	protected.Post("/mail/send", mailH.Send)      // [authenticated] send mail
+	protected.Get("/mail/history", mailH.History) // [authenticated] mail send history
 
 	// ── mail templates ────────────────────────────────────────────────────────
-	protected.Get("/mail/templates", mailTmplH.List)                          // [authenticated] list mail templates
-	protected.Post("/mail/templates", mailTmplH.Create)                       // [authenticated] create mail template
-	protected.Get("/mail/templates/:id", mailTmplH.Get)                       // [authenticated] get mail template by id
-	protected.Patch("/mail/templates/:id", mailTmplH.Update)                  // [authenticated] update mail template
-	protected.Delete("/mail/templates/:id", mailTmplH.Delete)                 // [authenticated] delete mail template
-	protected.Post("/mail/templates/:id/publish", mailTmplH.Publish)          // [authenticated] publish mail template
-        protected.Post("/mail/templates/:id/unpublish", mailTmplH.Unpublish)        // [authenticated] unpublish mail template
-        protected.Post("/mail/templates/:id/clone", mailTmplH.Clone)                // [authenticated] clone mail template into caller's chapter
-        protected.Post("/mail/images", mailTmplH.UploadImage)                       // [authenticated] upload mail template image
+	protected.Get("/mail/templates", mailTmplH.List)                     // [authenticated] list mail templates
+	protected.Post("/mail/templates", mailTmplH.Create)                  // [authenticated] create mail template
+	protected.Get("/mail/templates/:id", mailTmplH.Get)                  // [authenticated] get mail template by id
+	protected.Patch("/mail/templates/:id", mailTmplH.Update)             // [authenticated] update mail template
+	protected.Delete("/mail/templates/:id", mailTmplH.Delete)            // [authenticated] delete mail template
+	protected.Post("/mail/templates/:id/publish", mailTmplH.Publish)     // [authenticated] publish mail template
+	protected.Post("/mail/templates/:id/unpublish", mailTmplH.Unpublish) // [authenticated] unpublish mail template
+	protected.Post("/mail/templates/:id/clone", mailTmplH.Clone)         // [authenticated] clone mail template into caller's chapter
+	protected.Post("/mail/images", mailTmplH.UploadImage)                // [authenticated] upload mail template image
 	// ── dynamic images ────────────────────────────────────────────────────────
-	protected.Get("/dynamic-images", dynImgH.List)                            // [authenticated] list dynamic images
-	protected.Get("/dynamic-images/:id", dynImgH.Get)                         // [authenticated] get dynamic image by id
-	protected.Post("/dynamic-images", dynImgH.Create)                         // [authenticated] create dynamic image
-	protected.Patch("/dynamic-images/:id", dynImgH.Update)                    // [authenticated] update dynamic image
-	protected.Delete("/dynamic-images/:id", dynImgH.Delete)                   // [authenticated] delete dynamic image
-	protected.Post("/dynamic-images/:id/publish", dynImgH.Publish)            // [authenticated] publish dynamic image
-	protected.Post("/dynamic-images/:id/unpublish", dynImgH.Unpublish)        // [authenticated] unpublish dynamic image
-	protected.Post("/dynamic-images/:id/assets", dynImgH.UploadAsset)         // [authenticated] upload dynamic image asset
+	protected.Get("/dynamic-images", dynImgH.List)                     // [authenticated] list dynamic images
+	protected.Get("/dynamic-images/:id", dynImgH.Get)                  // [authenticated] get dynamic image by id
+	protected.Post("/dynamic-images", dynImgH.Create)                  // [authenticated] create dynamic image
+	protected.Patch("/dynamic-images/:id", dynImgH.Update)             // [authenticated] update dynamic image
+	protected.Delete("/dynamic-images/:id", dynImgH.Delete)            // [authenticated] delete dynamic image
+	protected.Post("/dynamic-images/:id/publish", dynImgH.Publish)     // [authenticated] publish dynamic image
+	protected.Post("/dynamic-images/:id/unpublish", dynImgH.Unpublish) // [authenticated] unpublish dynamic image
+	protected.Post("/dynamic-images/:id/assets", dynImgH.UploadAsset)  // [authenticated] upload dynamic image asset
+	protected.Post("/dynamic-images/:id/clone", dynImgH.Clone)         // [authenticated] clone dynamic image
 
 	// ── font library ──────────────────────────────────────────────────────────
-	protected.Get("/fonts", fontH.List)         // [authenticated] list fonts
+	protected.Get("/fonts", fontH.List)          // [authenticated] list fonts
 	protected.Post("/fonts", fontH.Upload)       // [authenticated] upload font
 	protected.Delete("/fonts/:id", fontH.Delete) // [authenticated] delete font
 

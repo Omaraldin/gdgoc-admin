@@ -44,6 +44,7 @@ type Service struct {
 	renderer    Renderer
 	pdfEncoder  PDFEncoder
 	publicURL   string
+	frontendURL string
 	cache       sync.Map // key: recipientID+":"+format → *certCacheEntry
 }
 
@@ -56,6 +57,7 @@ func NewService(
 	renderer Renderer,
 	pdfEncoder PDFEncoder,
 	publicURL string,
+	frontendURL string,
 ) *Service {
 	return &Service{
 		repo:        repo,
@@ -66,6 +68,7 @@ func NewService(
 		renderer:    renderer,
 		pdfEncoder:  pdfEncoder,
 		publicURL:   publicURL,
+		frontendURL: frontendURL,
 	}
 }
 
@@ -140,6 +143,12 @@ func (s *Service) renderCertBytes(ctx context.Context, recipientID, format strin
 		vars[k] = v
 	}
 	vars["cert.id"] = rec.ID
+	vars["cert.pdf_url"] = s.CertRenderURL(rec.ID, "pdf")
+	vars["cert.verify_url"] = fmt.Sprintf("%s/verify/%s", s.frontendURL, rec.ID)
+
+	vars["batch.name"] = batch.Name
+	vars["batch.cert_name"] = batch.CertName
+	vars["batch.cert_description"] = batch.CertDescription
 
 	chapter, err := s.chapterRepo.GetByID(ctx, batch.ChapterID)
 	if err == nil {
@@ -212,6 +221,9 @@ func (s *Service) ListBatches(ctx context.Context, caller *auth.SessionUser) ([]
 	if auth.IsSuperAdmin(caller.Role) {
 		return s.repo.ListAllBatches(ctx)
 	}
+	if caller.ChapterID == "" {
+		return []*IssuanceBatch{}, nil
+	}
 	return s.repo.ListBatches(ctx, caller.ChapterID)
 }
 
@@ -238,6 +250,52 @@ func (s *Service) GetProgress(ctx context.Context, batchID string, caller *auth.
 		return nil, err
 	}
 	return s.repo.GetProgress(ctx, batchID)
+}
+
+func (s *Service) ListCertNames(ctx context.Context, caller *auth.SessionUser) ([]string, error) {
+	if auth.IsSuperAdmin(caller.Role) {
+		// Super-admins get names across all chapters — just return empty to keep things simple.
+		// They should browse per-chapter certifications from the chapter view.
+		return []string{}, nil
+	}
+	if caller.ChapterID == "" {
+		return []string{}, nil
+	}
+	return s.repo.ListCertNames(ctx, caller.ChapterID)
+}
+
+func (s *Service) ListCertMetadata(ctx context.Context, caller *auth.SessionUser) ([]*CertMetadata, error) {
+	if caller.ChapterID == "" {
+		return []*CertMetadata{}, nil
+	}
+	return s.repo.ListCertMetadata(ctx, caller.ChapterID)
+}
+
+func (s *Service) CreateCertMetadata(ctx context.Context, input CreateCertMetadataInput, caller *auth.SessionUser) (*CertMetadata, error) {
+	if caller.ChapterID == "" {
+		return nil, apperrors.Forbidden("no chapter assigned")
+	}
+	if input.Name == "" {
+		return nil, apperrors.BadRequest("name is required")
+	}
+	return s.repo.CreateCertMetadata(ctx, caller.ChapterID, input)
+}
+
+func (s *Service) UpdateCertMetadata(ctx context.Context, id string, input UpdateCertMetadataInput, caller *auth.SessionUser) (*CertMetadata, error) {
+	if caller.ChapterID == "" {
+		return nil, apperrors.Forbidden("no chapter assigned")
+	}
+	if input.Name == "" {
+		return nil, apperrors.BadRequest("name is required")
+	}
+	return s.repo.UpdateCertMetadata(ctx, id, caller.ChapterID, input)
+}
+
+func (s *Service) DeleteCertMetadata(ctx context.Context, id string, caller *auth.SessionUser) error {
+	if caller.ChapterID == "" {
+		return apperrors.Forbidden("no chapter assigned")
+	}
+	return s.repo.DeleteCertMetadata(ctx, id, caller.ChapterID)
 }
 
 func (s *Service) CancelBatch(ctx context.Context, batchID string, caller *auth.SessionUser) error {

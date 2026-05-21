@@ -33,6 +33,7 @@ type Template struct {
 	Status           TemplateStatus     `json:"status"`
 	SourceTemplateID *string            `json:"source_template_id,omitempty"`
 	CurrentVersionID *string            `json:"current_version_id,omitempty"`
+	CreatedByName    string             `json:"created_by_name"`
 	CreatedAt        time.Time          `json:"created_at"`
 	UpdatedAt        time.Time          `json:"updated_at"`
 }
@@ -70,6 +71,7 @@ type Layer struct {
 	TextProps  *TextProps  `json:"text_props,omitempty"`
 	ImageProps *ImageProps `json:"image_props,omitempty"`
 	ShapeProps *ShapeProps `json:"shape_props,omitempty"`
+	QrProps    *QrProps    `json:"qr_props,omitempty"`
 }
 
 type LayerType string
@@ -78,6 +80,7 @@ const (
 	LayerTypeText  LayerType = "text"
 	LayerTypeImage LayerType = "image"
 	LayerTypeShape LayerType = "shape"
+	LayerTypeQR    LayerType = "qr"
 )
 
 // TextProps holds styling and content for a text layer.
@@ -107,6 +110,18 @@ type TextProps struct {
 type ImageProps struct {
 	AssetKey  string `json:"asset_key"`  // object key in storage
 	ObjectFit string `json:"object_fit"` // cover | contain | fill
+}
+
+// QrProps holds configuration for a dynamic QR-code layer.
+type QrProps struct {
+	// Content is the text/URL to encode. Supports {{variable}} interpolation.
+	Content string `json:"content"`
+	// ColorDark is the foreground (module) colour in CSS hex. Default #000000.
+	ColorDark string `json:"color_dark"`
+	// ColorLight is the background colour in CSS hex. Default #ffffff.
+	ColorLight string `json:"color_light"`
+	// ErrorCorrection is the QR error-correction level: L, M, Q, or H. Default M.
+	ErrorCorrection string `json:"error_correction"`
 }
 
 // --- Shape / vector types ---

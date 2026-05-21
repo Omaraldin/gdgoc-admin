@@ -37,13 +37,12 @@ func (r *Repository) UpsertUser(ctx context.Context, identity *KayanIdentity) (*
 	err := r.db.WithContext(ctx).Raw(`
 		INSERT INTO users (kayan_id, email, name, role, created_at, updated_at)
 		VALUES (?, ?, ?,
-			CASE WHEN EXISTS(SELECT 1 FROM whitelist WHERE email = ? AND added_by IS NULL)
-			     THEN ? ELSE ? END,
+			COALESCE((SELECT role FROM whitelist WHERE email = ? AND deleted_at IS NULL LIMIT 1), 'chapter_leader'),
 			NOW(), NOW())
 		ON CONFLICT (kayan_id) DO UPDATE
 			SET email = EXCLUDED.email, name = EXCLUDED.name, updated_at = NOW()
 		RETURNING id, email, name, role, COALESCE(chapter_id::text, '')
-	`, identity.KayanID, identity.Email, identity.Name, identity.Email, RoleSuperAdmin, RoleChapterLeader,
+	`, identity.KayanID, identity.Email, identity.Name, identity.Email,
 	).Scan(&u).Error
 	return &u, err
 }
@@ -52,9 +51,9 @@ func (r *Repository) UpsertUser(ctx context.Context, identity *KayanIdentity) (*
 // the user to super_admin (if they already exist). Safe to call on every startup.
 func (r *Repository) BootstrapSuperAdmin(ctx context.Context, email string) error {
 	err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO whitelist (email, added_by, created_at)
-		VALUES (?, NULL, NOW())
-		ON CONFLICT (email) DO NOTHING
+		INSERT INTO whitelist (email, role, added_by, created_at)
+		VALUES (?, 'super_admin', NULL, NOW())
+		ON CONFLICT (email) DO UPDATE SET role = 'super_admin', deleted_at = NULL
 	`, email).Error
 	if err != nil {
 		return fmt.Errorf("bootstrap whitelist: %w", err)

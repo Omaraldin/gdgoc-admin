@@ -1,6 +1,6 @@
 import { Outlet, redirect, useLoaderData, NavLink, Form } from "react-router";
 import { useEffect, useState } from "react";
-import { Menu, X, LayoutDashboard, FileText, Globe, Package, Mail, Building2, Settings, Users, ShieldCheck, LogOut, ChevronRight, ImagePlay, Code2, Type } from "lucide-react";
+import { Menu, X, LayoutDashboard, FileText, Globe, Package, Mail, Building2, Settings, Users, ShieldCheck, LogOut, ChevronRight, ImagePlay, Code2, Type, Award, BookOpen } from "lucide-react";
 import type { Route } from "./+types/admin-layout";
 import { getMe } from "~/lib/api/auth";
 import { ROLE_LABELS, isSuperAdminRole, isChapterLeaderRole } from "~/lib/roles";
@@ -22,7 +22,7 @@ export async function clientLoader(): Promise<{ user: User }> {
     // Super admins are not scoped to a chapter — they manage all.
     const needsChapter =
       !user.chapter_id &&
-      !isSuperAdminRole(user.role) &&
+      isChapterLeaderRole(user.role) &&
       typeof window !== "undefined" &&
       !window.location.pathname.startsWith("/chapters/new");
     if (needsChapter) {
@@ -75,6 +75,10 @@ export default function AdminLayout() {
           <NavItem to="/dynamic-images" label="Dynamic Images" icon={ImagePlay} onClick={close} />
           <NavItem to="/fonts" label="Font Library" icon={Type} onClick={close} />
           <NavItem to="/batches" label="Issuance Batches" icon={Package} onClick={close} />
+          <NavItem to="/certifications" label="Certifications" icon={Award} onClick={close} />
+          {user.chapter_id && (
+            <NavItem to="/cert-metadata" label="Cert Programmes" icon={BookOpen} onClick={close} />
+          )}
           <NavItem to="/functions" label="Defined Functions" icon={Code2} onClick={close} />
           <NavItem to="/mail" label="Email" icon={Mail} onClick={close} />
           {isSuperAdmin && (
@@ -94,6 +98,19 @@ export default function AdminLayout() {
             </div>
             <NavSection>
               <NavItem to="/users" label="Users" icon={Users} onClick={close} />
+              <NavItem to="/whitelist" label="Whitelist" icon={ShieldCheck} onClick={close} />
+            </NavSection>
+          </>
+        )}
+        {isChapterLeaderRole(user.role) && user.chapter_id && (
+          <>
+            <div className="px-3 pt-4 pb-1">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                Chapter
+              </p>
+            </div>
+            <NavSection>
+              <NavItem to="/users" label="Members" icon={Users} onClick={close} />
               <NavItem to="/whitelist" label="Whitelist" icon={ShieldCheck} onClick={close} />
             </NavSection>
           </>

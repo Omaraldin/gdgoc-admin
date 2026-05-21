@@ -20,9 +20,95 @@ func NewRepository(db *database.DB) *Repository {
 	return &Repository{db: db.Gorm}
 }
 
+func (r *Repository) CreateCertMetadata(ctx context.Context, chapterID string, input CreateCertMetadataInput) (*CertMetadata, error) {
+	var cm CertMetadata
+	err := r.db.WithContext(ctx).Raw(`
+		INSERT INTO cert_metadata (chapter_id, name, description, created_at, updated_at)
+		VALUES (?, ?, ?, NOW(), NOW())
+		RETURNING id, chapter_id, name, description, created_at, updated_at
+	`, chapterID, input.Name, input.Description).Scan(&cm).Error
+	if err != nil {
+		return nil, fmt.Errorf("create cert metadata: %w", err)
+	}
+	return &cm, nil
+}
+
+func (r *Repository) ListCertMetadata(ctx context.Context, chapterID string) ([]*CertMetadata, error) {
+	var rows []struct {
+		ID          string    `gorm:"column:id"`
+		ChapterID   string    `gorm:"column:chapter_id"`
+		Name        string    `gorm:"column:name"`
+		Description string    `gorm:"column:description"`
+		CreatedAt   time.Time `gorm:"column:created_at"`
+		UpdatedAt   time.Time `gorm:"column:updated_at"`
+	}
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT id, chapter_id, name, description, created_at, updated_at
+		FROM cert_metadata WHERE chapter_id = ? ORDER BY name ASC
+	`, chapterID).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]*CertMetadata, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, &CertMetadata{
+			ID:          row.ID,
+			ChapterID:   row.ChapterID,
+			Name:        row.Name,
+			Description: row.Description,
+			CreatedAt:   row.CreatedAt,
+			UpdatedAt:   row.UpdatedAt,
+		})
+	}
+	return result, nil
+}
+
+func (r *Repository) UpdateCertMetadata(ctx context.Context, id, chapterID string, input UpdateCertMetadataInput) (*CertMetadata, error) {
+	var cm CertMetadata
+	err := r.db.WithContext(ctx).Raw(`
+		UPDATE cert_metadata SET name = ?, description = ?, updated_at = NOW()
+		WHERE id = ? AND chapter_id = ?
+		RETURNING id, chapter_id, name, description, created_at, updated_at
+	`, input.Name, input.Description, id, chapterID).Scan(&cm).Error
+	if err != nil {
+		return nil, fmt.Errorf("update cert metadata: %w", err)
+	}
+	if cm.ID == "" {
+		return nil, apperrors.NotFound("cert metadata not found")
+	}
+	return &cm, nil
+}
+
+func (r *Repository) DeleteCertMetadata(ctx context.Context, id, chapterID string) error {
+	res := r.db.WithContext(ctx).Exec(`DELETE FROM cert_metadata WHERE id = ? AND chapter_id = ?`, id, chapterID)
+	if res.Error != nil {
+		return fmt.Errorf("delete cert metadata: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return apperrors.NotFound("cert metadata not found")
+	}
+	return nil
+}
+
 func (r *Repository) CreateBatch(ctx context.Context, input CreateBatchInput, chapterID, userID, versionID string) (*IssuanceBatch, error) {
 	batchID := uuid.New().String()
 	now := time.Now()
+
+	// If cert_id is provided, resolve cert_name from cert_metadata.
+	var certDescription string
+	if input.CertID != nil && *input.CertID != "" {
+		type cmRow struct {
+			Name        string `gorm:"column:name"`
+			Description string `gorm:"column:description"`
+		}
+		var cm cmRow
+		if err := r.db.WithContext(ctx).Raw(
+			`SELECT name, description FROM cert_metadata WHERE id = ? AND chapter_id = ?`,
+			*input.CertID, chapterID,
+		).Scan(&cm).Error; err == nil && cm.Name != "" {
+			input.CertName = cm.Name
+			certDescription = cm.Description
+		}
+	}
 
 	// Fetch chapter metadata needed to generate human-readable certificate IDs.
 	type chapterMeta struct {
@@ -44,9 +130,9 @@ func (r *Repository) CreateBatch(ctx context.Context, input CreateBatchInput, ch
 		}
 		if err := tx.Exec(`
 			INSERT INTO issuance_batches
-				(id, chapter_id, template_id, template_version_id, name, status, send_mail, is_printable, mail_template_id, mail_variables, total_count, success_count, failed_count, created_by_user_id, created_at, updated_at)
-			VALUES (?,?,?,?,?,'pending',?,?,?,?,?,0,0,?,NOW(),NOW())
-		`, batchID, chapterID, input.TemplateID, versionID, input.Name, input.SendMail, input.IsPrintable, input.MailTemplateID, mailVarsJSON, len(input.Recipients), userID).Error; err != nil {
+				(id, chapter_id, template_id, template_version_id, name, cert_id, cert_name, status, send_mail, is_printable, mail_template_id, mail_variables, total_count, success_count, failed_count, created_by_user_id, created_at, updated_at)
+			VALUES (?,?,?,?,?,?::uuid,?,'pending',?,?,?,?,?,0,0,?,NOW(),NOW())
+		`, batchID, chapterID, input.TemplateID, versionID, input.Name, input.CertID, input.CertName, input.SendMail, input.IsPrintable, input.MailTemplateID, mailVarsJSON, len(input.Recipients), userID).Error; err != nil {
 			return fmt.Errorf("create batch: %w", err)
 		}
 
@@ -59,7 +145,7 @@ func (r *Repository) CreateBatch(ctx context.Context, input CreateBatchInput, ch
 			if err != nil {
 				return err
 			}
-			certID := GenerateCertificateID(ch.Code, ch.SinceYear, ch.LeaderCodename)
+			certID := GenerateCertificateID(ch.Code, ch.LeaderCodename)
 			if err := tx.Exec(`
 				INSERT INTO issuance_recipients
 					(id, batch_id, email, variables, scripts, status, created_at, updated_at)
@@ -86,6 +172,9 @@ func (r *Repository) CreateBatch(ctx context.Context, input CreateBatchInput, ch
 		TemplateID:        input.TemplateID,
 		TemplateVersionID: versionID,
 		Name:              input.Name,
+		CertID:            input.CertID,
+		CertName:          input.CertName,
+		CertDescription:   certDescription,
 		Status:            BatchStatusPending,
 		SendMail:          input.SendMail,
 		IsPrintable:       input.IsPrintable,
@@ -107,6 +196,9 @@ func (r *Repository) GetBatch(ctx context.Context, id string) (*IssuanceBatch, e
 		TemplateID        string          `gorm:"column:template_id"`
 		TemplateVersionID string          `gorm:"column:template_version_id"`
 		Name              string          `gorm:"column:name"`
+		CertID            *string         `gorm:"column:cert_id"`
+		CertName          string          `gorm:"column:cert_name"`
+		CertDescription   string          `gorm:"column:cert_description"`
 		Status            string          `gorm:"column:status"`
 		SendMail          bool            `gorm:"column:send_mail"`
 		IsPrintable       bool            `gorm:"column:is_printable"`
@@ -116,15 +208,21 @@ func (r *Repository) GetBatch(ctx context.Context, id string) (*IssuanceBatch, e
 		SuccessCount      int             `gorm:"column:success_count"`
 		FailedCount       int             `gorm:"column:failed_count"`
 		CreatedByUserID   string          `gorm:"column:created_by_user_id"`
+		CreatedByName     string          `gorm:"column:created_by_name"`
 		CreatedAt         time.Time       `gorm:"column:created_at"`
 		UpdatedAt         time.Time       `gorm:"column:updated_at"`
 	}
 	var row batchRow
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, chapter_id, template_id, template_version_id, name, status, send_mail, is_printable,
-		       mail_template_id, mail_variables,
-		       total_count, success_count, failed_count, created_by_user_id, created_at, updated_at
-		FROM issuance_batches WHERE id = ?
+		SELECT b.id, b.chapter_id, b.template_id, b.template_version_id, b.name, b.cert_id, b.cert_name, b.status, b.send_mail, b.is_printable,
+		       b.mail_template_id, b.mail_variables,
+		       b.total_count, b.success_count, b.failed_count, b.created_by_user_id, b.created_at, b.updated_at,
+		       COALESCE(u.name, '') AS created_by_name,
+		       COALESCE(cm.description, '') AS cert_description
+		FROM issuance_batches b
+		LEFT JOIN users u ON u.id = b.created_by_user_id
+		LEFT JOIN cert_metadata cm ON cm.id = b.cert_id
+		WHERE b.id = ?
 	`, id).Scan(&row).Error
 	if err != nil || row.ID == "" {
 		return nil, apperrors.NotFound("batch not found")
@@ -139,6 +237,9 @@ func (r *Repository) GetBatch(ctx context.Context, id string) (*IssuanceBatch, e
 		TemplateID:        row.TemplateID,
 		TemplateVersionID: row.TemplateVersionID,
 		Name:              row.Name,
+		CertID:            row.CertID,
+		CertName:          row.CertName,
+		CertDescription:   row.CertDescription,
 		Status:            BatchStatus(row.Status),
 		SendMail:          row.SendMail,
 		IsPrintable:       row.IsPrintable,
@@ -148,6 +249,7 @@ func (r *Repository) GetBatch(ctx context.Context, id string) (*IssuanceBatch, e
 		SuccessCount:      row.SuccessCount,
 		FailedCount:       row.FailedCount,
 		CreatedByUserID:   row.CreatedByUserID,
+		CreatedByName:     row.CreatedByName,
 		CreatedAt:         row.CreatedAt,
 		UpdatedAt:         row.UpdatedAt,
 	}, nil
@@ -160,6 +262,9 @@ func (r *Repository) listBatchRows(ctx context.Context, query string, args ...in
 		TemplateID        string          `gorm:"column:template_id"`
 		TemplateVersionID string          `gorm:"column:template_version_id"`
 		Name              string          `gorm:"column:name"`
+		CertID            *string         `gorm:"column:cert_id"`
+		CertName          string          `gorm:"column:cert_name"`
+		CertDescription   string          `gorm:"column:cert_description"`
 		Status            string          `gorm:"column:status"`
 		SendMail          bool            `gorm:"column:send_mail"`
 		IsPrintable       bool            `gorm:"column:is_printable"`
@@ -169,6 +274,7 @@ func (r *Repository) listBatchRows(ctx context.Context, query string, args ...in
 		SuccessCount      int             `gorm:"column:success_count"`
 		FailedCount       int             `gorm:"column:failed_count"`
 		CreatedByUserID   string          `gorm:"column:created_by_user_id"`
+		CreatedByName     string          `gorm:"column:created_by_name"`
 		CreatedAt         time.Time       `gorm:"column:created_at"`
 		UpdatedAt         time.Time       `gorm:"column:updated_at"`
 	}
@@ -188,6 +294,9 @@ func (r *Repository) listBatchRows(ctx context.Context, query string, args ...in
 			TemplateID:        row.TemplateID,
 			TemplateVersionID: row.TemplateVersionID,
 			Name:              row.Name,
+			CertID:            row.CertID,
+			CertName:          row.CertName,
+			CertDescription:   row.CertDescription,
 			Status:            BatchStatus(row.Status),
 			SendMail:          row.SendMail,
 			IsPrintable:       row.IsPrintable,
@@ -197,6 +306,7 @@ func (r *Repository) listBatchRows(ctx context.Context, query string, args ...in
 			SuccessCount:      row.SuccessCount,
 			FailedCount:       row.FailedCount,
 			CreatedByUserID:   row.CreatedByUserID,
+			CreatedByName:     row.CreatedByName,
 			CreatedAt:         row.CreatedAt,
 			UpdatedAt:         row.UpdatedAt,
 		})
@@ -206,20 +316,45 @@ func (r *Repository) listBatchRows(ctx context.Context, query string, args ...in
 
 func (r *Repository) ListBatches(ctx context.Context, chapterID string) ([]*IssuanceBatch, error) {
 	return r.listBatchRows(ctx, `
-		SELECT id, chapter_id, template_id, template_version_id, name, status, send_mail, is_printable,
-		       mail_template_id, mail_variables,
-		       total_count, success_count, failed_count, created_by_user_id, created_at, updated_at
-		FROM issuance_batches WHERE chapter_id = ? ORDER BY created_at DESC
+		SELECT b.id, b.chapter_id, b.template_id, b.template_version_id, b.name, b.cert_id, b.cert_name, b.status, b.send_mail, b.is_printable,
+		       b.mail_template_id, b.mail_variables,
+		       b.total_count, b.success_count, b.failed_count, b.created_by_user_id, b.created_at, b.updated_at,
+		       COALESCE(u.name, '') AS created_by_name,
+		       COALESCE(cm.description, '') AS cert_description
+		FROM issuance_batches b
+		LEFT JOIN users u ON u.id = b.created_by_user_id
+		LEFT JOIN cert_metadata cm ON cm.id = b.cert_id
+		WHERE b.chapter_id = ? ORDER BY b.created_at DESC
 	`, chapterID)
 }
 
 func (r *Repository) ListAllBatches(ctx context.Context) ([]*IssuanceBatch, error) {
 	return r.listBatchRows(ctx, `
-		SELECT id, chapter_id, template_id, template_version_id, name, status, send_mail, is_printable,
-		       mail_template_id, mail_variables,
-		       total_count, success_count, failed_count, created_by_user_id, created_at, updated_at
-		FROM issuance_batches ORDER BY created_at DESC
+		SELECT b.id, b.chapter_id, b.template_id, b.template_version_id, b.name, b.cert_id, b.cert_name, b.status, b.send_mail, b.is_printable,
+		       b.mail_template_id, b.mail_variables,
+		       b.total_count, b.success_count, b.failed_count, b.created_by_user_id, b.created_at, b.updated_at,
+		       COALESCE(u.name, '') AS created_by_name,
+		       COALESCE(cm.description, '') AS cert_description
+		FROM issuance_batches b
+		LEFT JOIN users u ON u.id = b.created_by_user_id
+		LEFT JOIN cert_metadata cm ON cm.id = b.cert_id
+		ORDER BY b.created_at DESC
 	`)
+}
+
+// ListCertNames returns distinct non-empty cert_name values for a chapter, ordered by most recent.
+func (r *Repository) ListCertNames(ctx context.Context, chapterID string) ([]string, error) {
+	var names []string
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT DISTINCT cert_name
+		FROM issuance_batches
+		WHERE chapter_id = ? AND cert_name <> ''
+		ORDER BY cert_name ASC
+	`, chapterID).Pluck("cert_name", &names).Error
+	if err != nil {
+		return nil, err
+	}
+	return names, nil
 }
 
 func (r *Repository) ListRecipients(ctx context.Context, batchID string) ([]*BatchRecipient, error) {

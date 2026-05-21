@@ -45,6 +45,7 @@ func (s *Service) Send(ctx context.Context, input SendMailInput, chapterID strin
 		Input:     input,
 		CreatedAt: time.Now(),
 	}
+	fmt.Println(input.Body)
 	select {
 	case s.queue <- job:
 	case <-ctx.Done():

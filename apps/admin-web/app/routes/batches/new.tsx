@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLoaderData, Link } from "react-router";
 import { Plus, Trash2, Code } from "lucide-react";
 import { listTemplates, getTemplate, getTemplateVersion } from "~/lib/api/templates";
-import { createBatch } from "~/lib/api/issuance";
+import { createBatch, listCertMetadata, createCertMetadata } from "~/lib/api/issuance";
 import type { RecipientInput } from "~/lib/api/issuance";
 import { getMe } from "~/lib/api/auth";
 import { getChapter } from "~/lib/api/admin";
@@ -16,7 +16,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Card, CardContent } from "~/components/ui/card";
 import { cn } from "~/lib/utils";
-import type { Chapter, User } from "~/lib/types";
+import type { Chapter, User, CertMetadata } from "~/lib/types";
 
 export function meta() {
   return [{ title: "New Batch | GDGoC Admin" }];
@@ -92,7 +92,7 @@ async function fetchTemplateVariables(templateId: string): Promise<ClassifiedVar
 // System variable keys auto-provided by the issuance worker
 const SYSTEM_VAR_KEYS = [
   "cert.id", "cert.pdf_url", "cert.verify_url",
-  "batch.name",
+  "batch.name", "batch.cert_name", "batch.cert_description",
   "chapter.name", "chapter.leader", "chapter.id", "chapter.email", "chapter.code",
 ];
 
@@ -102,6 +102,14 @@ export default function NewBatchPage() {
 
   const [templateId, setTemplateId] = useState("");
   const [batchName, setBatchName] = useState("");
+  const [certId, setCertId] = useState("");
+  const [certMetadataList, setCertMetadataList] = useState<CertMetadata[]>([]);
+  // New cert modal state
+  const [showNewCertModal, setShowNewCertModal] = useState(false);
+  const [newCertName, setNewCertName] = useState("");
+  const [newCertDescription, setNewCertDescription] = useState("");
+  const [creatingCert, setCreatingCert] = useState(false);
+  const [certModalError, setCertModalError] = useState("");
   const [sendMail, setSendMail] = useState(false);
   const [isPrintable, setIsPrintable] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -137,6 +145,13 @@ export default function NewBatchPage() {
   // Functions library preamble (read from localStorage on mount)
   const [preamble, setPreamble] = useState("");
   useEffect(() => { setPreamble(buildPreamble(loadFunctions())); }, []);
+
+  // Load cert metadata list
+  useEffect(() => {
+    listCertMetadata().then(setCertMetadataList).catch(() => setCertMetadataList([]));
+  }, []);
+
+  const selectedCert = certMetadataList.find((c) => c.id === certId) ?? null;
 
   const handleTemplateChange = async (id: string) => {
     setTemplateId(id);
@@ -211,6 +226,7 @@ export default function NewBatchPage() {
       const batch = await createBatch({
         template_id: templateId,
         name: batchName,
+        cert_id: certId || undefined,
         recipients,
         send_mail: sendMail,
         is_printable: isPrintable,
@@ -248,8 +264,10 @@ export default function NewBatchPage() {
     }
     // batch.*
     ctx["batch.name"] = batchName;
+    ctx["batch.cert_name"] = selectedCert?.name ?? "";
+    ctx["batch.cert_description"] = selectedCert?.description ?? "";
     return ctx;
-  }, [chapter, me, selectedTemplate, batchName]);
+  }, [chapter, me, selectedTemplate, batchName, selectedCert]);
 
   // All variable keys available to reference in mail template variable mapping
   const availableBatchKeys = useMemo(() => {
@@ -275,6 +293,37 @@ export default function NewBatchPage() {
         <Card>
           <CardContent className="p-5 space-y-4">
             <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Batch Details</h2>
+            <div className="space-y-1.5">
+              <Label>Certificate</Label>
+              <p className="text-xs text-muted-foreground">
+                The programme or event this batch belongs to. Groups batches on the Certifications page.
+              </p>
+              <div className="flex gap-2">
+                <select
+                  className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={certId}
+                  onChange={(e) => setCertId(e.target.value)}
+                >
+                  <option value="">— None —</option>
+                  {certMetadataList.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => { setShowNewCertModal(true); setCertModalError(""); setNewCertName(""); setNewCertDescription(""); }}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  New
+                </Button>
+              </div>
+              {selectedCert?.description && (
+                <p className="text-xs text-muted-foreground italic">{selectedCert.description}</p>
+              )}
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="batch-name">Batch Name <span className="text-destructive">*</span></Label>
               <Input
@@ -622,6 +671,76 @@ export default function NewBatchPage() {
           {creating ? "Creating…" : sendMail ? "Create Batch & Send Emails" : "Create Batch & Generate Certificates"}
         </Button>
       </form>
+
+      {/* New Certificate Modal */}
+      {showNewCertModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background rounded-lg shadow-xl w-full max-w-md mx-4 p-6 space-y-4">
+            <h2 className="text-base font-semibold text-foreground">New Certificate</h2>
+            <p className="text-xs text-muted-foreground">
+              Create a new certificate programme that groups related batches together.
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="modal-cert-name">Name <span className="text-destructive">*</span></Label>
+                <Input
+                  id="modal-cert-name"
+                  placeholder="e.g. Google Cloud Study Jam 2026"
+                  value={newCertName}
+                  onChange={(e) => setNewCertName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="modal-cert-desc">Description</Label>
+                <textarea
+                  id="modal-cert-desc"
+                  rows={3}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  placeholder="Briefly describe this certification programme…"
+                  value={newCertDescription}
+                  onChange={(e) => setNewCertDescription(e.target.value)}
+                />
+              </div>
+              {certModalError && (
+                <p className="text-xs text-destructive">{certModalError}</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowNewCertModal(false)}
+                disabled={creatingCert}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={creatingCert || !newCertName.trim()}
+                onClick={async () => {
+                  setCertModalError("");
+                  setCreatingCert(true);
+                  try {
+                    const created = await createCertMetadata({ name: newCertName.trim(), description: newCertDescription.trim() });
+                    setCertMetadataList((prev) => [...prev, created]);
+                    setCertId(created.id);
+                    setShowNewCertModal(false);
+                  } catch {
+                    setCertModalError("Failed to create certificate. Please try again.");
+                  } finally {
+                    setCreatingCert(false);
+                  }
+                }}
+              >
+                {creatingCert ? "Creating…" : "Create Certificate"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

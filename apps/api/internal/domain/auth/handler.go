@@ -10,6 +10,14 @@ import (
 
 const refreshCookiePath = "/api/v1/auth/refresh"
 
+func sameSiteForSessionCookies(appEnv string) string {
+	if appEnv == "production" {
+		// Cross-site frontend (e.g. Vercel) requires SameSite=None cookies.
+		return "None"
+	}
+	return "Lax"
+}
+
 type Handler struct {
 	svc *Service
 }
@@ -58,13 +66,14 @@ func (h *Handler) Callback(c *fiber.Ctx) error {
 	}
 
 	secure := h.svc.cfg.AppEnv == "production"
+	sameSite := sameSiteForSessionCookies(h.svc.cfg.AppEnv)
 
 	// Short-lived access token — sent on every request.
 	c.Cookie(&fiber.Cookie{
 		Name:     "session",
 		Value:    pair.AccessToken,
 		HTTPOnly: true,
-		SameSite: "Lax",
+		SameSite: sameSite,
 		MaxAge:   h.svc.cfg.Session.AccessTokenHours * 3600,
 		Secure:   secure,
 	})
@@ -73,7 +82,7 @@ func (h *Handler) Callback(c *fiber.Ctx) error {
 		Name:     "refresh_token",
 		Value:    pair.RefreshToken,
 		HTTPOnly: true,
-		SameSite: "Lax",
+		SameSite: sameSite,
 		Path:     refreshCookiePath,
 		MaxAge:   h.svc.cfg.Session.MaxAgeHours * 3600,
 		Secure:   secure,
@@ -100,12 +109,13 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
 	}
 
 	secure := h.svc.cfg.AppEnv == "production"
+	sameSite := sameSiteForSessionCookies(h.svc.cfg.AppEnv)
 
 	c.Cookie(&fiber.Cookie{
 		Name:     "session",
 		Value:    pair.AccessToken,
 		HTTPOnly: true,
-		SameSite: "Lax",
+		SameSite: sameSite,
 		MaxAge:   h.svc.cfg.Session.AccessTokenHours * 3600,
 		Secure:   secure,
 	})
@@ -113,7 +123,7 @@ func (h *Handler) Refresh(c *fiber.Ctx) error {
 		Name:     "refresh_token",
 		Value:    pair.RefreshToken,
 		HTTPOnly: true,
-		SameSite: "Lax",
+		SameSite: sameSite,
 		Path:     refreshCookiePath,
 		MaxAge:   h.svc.cfg.Session.MaxAgeHours * 3600,
 		Secure:   secure,

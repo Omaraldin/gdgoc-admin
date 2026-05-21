@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { MousePointer, PenTool, Spline, Type, Image, ZoomIn, ZoomOut, Variable, Palette } from "lucide-react";
+import { MousePointer, PenTool, Spline, Type, Image, ZoomIn, ZoomOut, Variable, Palette, QrCode } from "lucide-react";
 import type { SceneDefinition, ShapeKind } from "~/lib/types";
 import type { ToolMode } from "./PathOverlay";
 import { ColorPicker } from "./ColorPicker";
@@ -101,6 +101,7 @@ interface EditorToolbarProps {
   onToolModeChange: (mode: ToolMode) => void;
   onAddText: () => void;
   onAddImageClick: () => void;
+  onAddQr: () => void;
   onSelectShapeTool: (kind: ShapeKind) => void;
   onBackgroundChange: (color: string) => void;
   onZoomIn: () => void;
@@ -118,6 +119,7 @@ export function EditorToolbar({
   onToolModeChange,
   onAddText,
   onAddImageClick,
+  onAddQr,
   onSelectShapeTool,
   onBackgroundChange,
   onZoomIn,
@@ -150,6 +152,15 @@ export function EditorToolbar({
           className="w-8 h-8 flex items-center justify-center rounded text-text-1 hover:bg-canvas transition-colors"
         >
           <Image size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={onAddQr}
+          onMouseEnter={(e) => show(e, "Add QR Code")}
+          onMouseLeave={hide}
+          className="w-8 h-8 flex items-center justify-center rounded text-text-1 hover:bg-canvas transition-colors"
+        >
+          <QrCode size={15} />
         </button>
         <input
           ref={fileInputRef}

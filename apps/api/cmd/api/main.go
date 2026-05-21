@@ -80,7 +80,7 @@ func main() {
 		MicrosoftClientID:     cfg.SMTPOAuth.MicrosoftClientID,
 		MicrosoftClientSecret: cfg.SMTPOAuth.MicrosoftClientSecret,
 	}
-	w := worker.NewIssuanceWorker(db, issuanceQ, issuanceRepo, tmplRepo, chapterRepo, mailTemplateRepo, cfg.Worker, oauthCreds, cfg.PublicURL)
+	w := worker.NewIssuanceWorker(db, issuanceQ, issuanceRepo, tmplRepo, chapterRepo, mailTemplateRepo, cfg.Worker, oauthCreds, cfg.PublicURL, cfg.FrontendURL)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	defer workerCancel()
 	go w.Run(workerCtx)

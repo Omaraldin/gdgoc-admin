@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useLoaderData, useNavigate } from "react-router";
 import type { Route } from "./+types/editor";
-import { getTemplate, listTemplateVersions, uploadTemplateAsset } from "~/lib/api/templates";
+import { getTemplate, listTemplateVersions, uploadTemplateAsset, updateTemplateMeta } from "~/lib/api/templates";
 import { apiClient } from "~/lib/api/client";
 import { CertificateEditor } from "~/components/editor/CertificateEditor";
 import type { SceneDefinition } from "~/lib/types";
@@ -65,6 +65,7 @@ export default function TemplateEditorPage() {
 
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [name, setName] = useState(template?.name ?? "");
     const [pendingFiles, setPendingFiles] = useState<Record<string, { file: File; blobUrl: string }>>({});
     // After upload: maps real objectKey → blob URL until the real image finishes loading.
     const [transitionBlobs, setTransitionBlobs] = useState<Record<string, string>>({});
@@ -150,6 +151,9 @@ export default function TemplateEditorPage() {
             }
 
             await apiClient.post(`/templates/${template?.id}/versions`, { scene: currentScene });
+            if (template?.id && name.trim() && name.trim() !== template.name) {
+                await updateTemplateMeta(template.id, { name: name.trim(), description: template.description });
+            }
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
         } finally {
@@ -165,7 +169,12 @@ export default function TemplateEditorPage() {
                     <button onClick={() => navigate(`/templates/${template?.id}`)} className="text-text-2 hover:text-text-1">
                         ← Back
                     </button>
-                    <h1 className="font-semibold">{template?.name}</h1>
+                    <input
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="font-semibold bg-transparent border-b border-transparent hover:border-border focus:border-border focus:outline-none px-0.5 min-w-0 max-w-xs"
+                        aria-label="Template name"
+                    />
                     <span className="text-xs text-text-3">
                         Editor · {scene.width} × {scene.height}
                         {Object.keys(pendingFiles).length > 0 && (

@@ -23,10 +23,12 @@ func NewRepository(db *database.DB) *Repository {
 func (r *Repository) List(ctx context.Context, ownerChapterID string) ([]*DynamicImage, error) {
 	items := make([]*DynamicImage, 0)
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, description, status, owner_user_id, owner_chapter_id, scene, created_at, updated_at
-		FROM dynamic_images
-		WHERE owner_chapter_id = ? AND deleted_at IS NULL
-		ORDER BY updated_at DESC
+		SELECT d.id, d.name, d.description, d.status, d.owner_user_id, d.owner_chapter_id, d.scene, d.created_at, d.updated_at,
+		       COALESCE(u.name, '') AS created_by_name
+		FROM dynamic_images d
+		LEFT JOIN users u ON u.id = d.owner_user_id
+		WHERE d.owner_chapter_id = ? AND d.deleted_at IS NULL
+		ORDER BY d.updated_at DESC
 	`, ownerChapterID).Scan(&items).Error
 	return items, err
 }
@@ -36,10 +38,12 @@ func (r *Repository) List(ctx context.Context, ownerChapterID string) ([]*Dynami
 func (r *Repository) ListByChapterOrPublished(ctx context.Context, ownerChapterID string) ([]*DynamicImage, error) {
 	items := make([]*DynamicImage, 0)
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, description, status, owner_user_id, owner_chapter_id, scene, created_at, updated_at
-		FROM dynamic_images
-		WHERE deleted_at IS NULL AND (owner_chapter_id = ? OR status = 'published')
-		ORDER BY (owner_chapter_id = ?) DESC, updated_at DESC
+		SELECT d.id, d.name, d.description, d.status, d.owner_user_id, d.owner_chapter_id, d.scene, d.created_at, d.updated_at,
+		       COALESCE(u.name, '') AS created_by_name
+		FROM dynamic_images d
+		LEFT JOIN users u ON u.id = d.owner_user_id
+		WHERE d.deleted_at IS NULL AND (d.owner_chapter_id = ? OR d.status = 'published')
+		ORDER BY (d.owner_chapter_id = ?) DESC, d.updated_at DESC
 	`, ownerChapterID, ownerChapterID).Scan(&items).Error
 	return items, err
 }
@@ -47,10 +51,12 @@ func (r *Repository) ListByChapterOrPublished(ctx context.Context, ownerChapterI
 func (r *Repository) ListAll(ctx context.Context) ([]*DynamicImage, error) {
 	items := make([]*DynamicImage, 0)
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, description, status, owner_user_id, owner_chapter_id, scene, created_at, updated_at
-		FROM dynamic_images
-		WHERE deleted_at IS NULL
-		ORDER BY updated_at DESC
+		SELECT d.id, d.name, d.description, d.status, d.owner_user_id, d.owner_chapter_id, d.scene, d.created_at, d.updated_at,
+		       COALESCE(u.name, '') AS created_by_name
+		FROM dynamic_images d
+		LEFT JOIN users u ON u.id = d.owner_user_id
+		WHERE d.deleted_at IS NULL
+		ORDER BY d.updated_at DESC
 	`).Scan(&items).Error
 	return items, err
 }
@@ -58,8 +64,11 @@ func (r *Repository) ListAll(ctx context.Context) ([]*DynamicImage, error) {
 func (r *Repository) GetByID(ctx context.Context, id string) (*DynamicImage, error) {
 	var d DynamicImage
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, description, status, owner_user_id, owner_chapter_id, scene, created_at, updated_at
-		FROM dynamic_images WHERE id = ? AND deleted_at IS NULL
+		SELECT d.id, d.name, d.description, d.status, d.owner_user_id, d.owner_chapter_id, d.scene, d.created_at, d.updated_at,
+		       COALESCE(u.name, '') AS created_by_name
+		FROM dynamic_images d
+		LEFT JOIN users u ON u.id = d.owner_user_id
+		WHERE d.id = ? AND d.deleted_at IS NULL
 	`, id).Scan(&d).Error
 	if err != nil || d.ID == "" {
 		return nil, apperrors.NotFound("dynamic image not found")
@@ -155,4 +164,20 @@ func (r *Repository) Unpublish(ctx context.Context, id string) error {
 		return apperrors.NotFound("dynamic image not found")
 	}
 	return nil
+}
+
+func (r *Repository) Clone(ctx context.Context, sourceID, newOwnerUserID, newOwnerChapterID string) (*DynamicImage, error) {
+	src, err := r.GetByID(ctx, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	id := uuid.New().String()
+	err = r.db.WithContext(ctx).Exec(`
+		INSERT INTO dynamic_images (id, name, description, owner_user_id, owner_chapter_id, scene, created_at, updated_at)
+		VALUES (?, ?, ?, ?, NULLIF(?, '')::uuid, ?, NOW(), NOW())
+	`, id, src.Name+" (Clone)", src.Description, newOwnerUserID, newOwnerChapterID, src.Scene).Error
+	if err != nil {
+		return nil, err
+	}
+	return r.GetByID(ctx, id)
 }

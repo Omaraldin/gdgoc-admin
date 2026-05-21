@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE IF NOT EXISTS chapters (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name        TEXT NOT NULL,
-    email       TEXT NOT NULL UNIQUE,
+    email       TEXT UNIQUE,
     leader_id   UUID,
     status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive')),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS whitelist (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email       TEXT NOT NULL UNIQUE,
+    role        TEXT NOT NULL DEFAULT 'chapter_leader' CHECK (role IN ('super_admin','chapter_leader','editor')),
+    chapter_id  UUID REFERENCES chapters(id) ON DELETE SET NULL,
     added_by    UUID REFERENCES users(id) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at  TIMESTAMPTZ
@@ -177,6 +179,10 @@ CREATE INDEX IF NOT EXISTS idx_issuance_batches_chapter  ON issuance_batches(cha
 CREATE INDEX IF NOT EXISTS idx_issuance_batches_status   ON issuance_batches(status);
 CREATE INDEX IF NOT EXISTS idx_issuance_recipients_batch ON issuance_recipients(batch_id);
 CREATE INDEX IF NOT EXISTS idx_issuance_recipients_email ON issuance_recipients(email);
+
+-- cert_name: human-readable certification programme name shared across multiple batches.
+ALTER TABLE issuance_batches ADD COLUMN IF NOT EXISTS cert_name TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_issuance_batches_cert_name ON issuance_batches(chapter_id, cert_name) WHERE cert_name <> '';
 
 -- ---------------------------------------------------------------------------
 -- Audit log
@@ -312,3 +318,36 @@ ALTER TABLE mail_templates ADD COLUMN IF NOT EXISTS
 
 ALTER TABLE dynamic_images ADD COLUMN IF NOT EXISTS
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published'));
+
+-- ---------------------------------------------------------------------------
+-- Whitelist: role column (determines the role assigned on first login)
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE whitelist ADD COLUMN IF NOT EXISTS
+    role TEXT NOT NULL DEFAULT 'chapter_leader' CHECK (role IN ('super_admin','chapter_leader','editor'));
+ALTER TABLE whitelist ADD COLUMN IF NOT EXISTS
+    chapter_id UUID REFERENCES chapters(id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------------
+-- chapters.email: allow null (leader fills it later via SMTP connection)
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE chapters ALTER COLUMN email DROP NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Certificate metadata: named programmes that group batches
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS cert_metadata (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chapter_id  UUID NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cert_metadata_chapter ON cert_metadata(chapter_id);
+
+-- Migration: link issuance_batches to cert_metadata
+ALTER TABLE issuance_batches ADD COLUMN IF NOT EXISTS cert_id UUID REFERENCES cert_metadata(id) ON DELETE SET NULL;

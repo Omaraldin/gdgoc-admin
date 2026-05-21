@@ -1,12 +1,21 @@
 import { useState } from "react";
-import { useLoaderData, useRevalidator } from "react-router";
+import { useLoaderData, useRevalidator, useOutletContext } from "react-router";
 import { listWhitelist, addToWhitelist, removeFromWhitelist } from "~/lib/api/admin";
 import { formatDate } from "~/lib/utils";
 import { ConfirmModal } from "~/components/ConfirmModal";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Card } from "~/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "~/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
+import { isSuperAdminRole } from "~/lib/roles";
+import type { User } from "~/lib/types";
+
+const ROLE_LABELS: Record<string, string> = {
+  chapter_leader: "Chapter Leader",
+  super_admin: "Super Admin",
+  editor: "Editor",
+};
 
 export function meta() {
   return [{ title: "Whitelist | GDGoC Admin" }];
@@ -18,16 +27,20 @@ export async function clientLoader() {
 
 export default function WhitelistPage() {
   const entries = useLoaderData<typeof clientLoader>();
+  const { user } = useOutletContext<{ user: User }>();
+  const isSuperAdmin = isSuperAdminRole(user.role);
   const revalidator = useRevalidator();
   const [email, setEmail] = useState("");
+  const [role, setRole] = useState("chapter_leader");
   const [adding, setAdding] = useState(false);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdding(true);
     try {
-      await addToWhitelist(email);
+      await addToWhitelist(email, role);
       setEmail("");
+      setRole("chapter_leader");
       revalidator.revalidate();
     } finally {
       setAdding(false);
@@ -53,6 +66,16 @@ export default function WhitelistPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
+        <Select value={role} onValueChange={setRole}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="chapter_leader">Chapter Leader</SelectItem>
+            <SelectItem value="editor">Editor</SelectItem>
+            {isSuperAdmin && <SelectItem value="super_admin">Super Admin</SelectItem>}
+          </SelectContent>
+        </Select>
         <Button type="submit" disabled={adding} size="sm">
           {adding ? "Adding…" : "Add Email"}
         </Button>
@@ -63,6 +86,7 @@ export default function WhitelistPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Email</TableHead>
+              <TableHead>Role</TableHead>
               <TableHead>Added</TableHead>
               <TableHead />
             </TableRow>
@@ -71,6 +95,7 @@ export default function WhitelistPage() {
             {entries.map((e) => (
               <TableRow key={e.id}>
                 <TableCell>{e.email}</TableCell>
+                <TableCell className="text-xs">{ROLE_LABELS[e.role] ?? e.role}</TableCell>
                 <TableCell className="text-muted-foreground text-xs">{formatDate(e.created_at)}</TableCell>
                 <TableCell className="text-right">
                   <button

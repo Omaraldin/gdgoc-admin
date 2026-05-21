@@ -13,7 +13,7 @@ export async function getChapter(id: string): Promise<Chapter> {
 
 export async function createChapter(data: {
   name: string;
-  email: string;
+  email?: string;
   code?: string;
   since_year?: number;
   leader_codename?: string;
@@ -96,13 +96,17 @@ export async function updateUser(id: string, data: Partial<User>): Promise<User>
   return res.data;
 }
 
+export async function deleteUser(id: string): Promise<void> {
+  await apiClient.delete(`/users/${id}`);
+}
+
 export async function listWhitelist(): Promise<WhitelistEntry[]> {
   const res = await apiClient.get<WhitelistEntry[]>("/whitelist");
   return res.data;
 }
 
-export async function addToWhitelist(email: string): Promise<void> {
-  await apiClient.post("/whitelist", { email });
+export async function addToWhitelist(email: string, role: string): Promise<void> {
+  await apiClient.post("/whitelist", { email, role });
 }
 
 export async function removeFromWhitelist(id: string): Promise<void> {

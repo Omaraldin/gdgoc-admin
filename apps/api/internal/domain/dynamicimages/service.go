@@ -219,8 +219,20 @@ func (s *Service) canAccess(d *DynamicImage, caller *auth.SessionUser) bool {
 	return auth.IsSuperAdmin(caller.Role) || d.OwnerChapterID == caller.ChapterID
 }
 
+func (s *Service) Clone(ctx context.Context, id string, caller *auth.SessionUser) (*DynamicImage, error) {
+	src, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// Allow cloning own images or any published image
+	if !s.canAccess(src, caller) {
+		return nil, apperrors.Forbidden("access denied")
+	}
+	return s.repo.Clone(ctx, id, caller.ID, caller.ChapterID)
+}
+
 func (s *Service) canWrite(d *DynamicImage, caller *auth.SessionUser) bool {
-	return auth.IsSuperAdmin(caller.Role) || d.OwnerChapterID == caller.ChapterID
+	return auth.IsSuperAdmin(caller.Role) || d.OwnerUserID == caller.ID
 }
 
 // keyToLabel converts a snake_case / camelCase key into a human-readable label.

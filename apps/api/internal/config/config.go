@@ -11,6 +11,7 @@ type Config struct {
 	ServerPort  string
 	DatabaseURL string
 	PublicURL   string // API_BASE_URL — used to build certificate render links in emails
+	FrontendURL string // FRONTEND_URL — base URL of the admin web app (e.g. https://admin.example.com)
 	Storage     StorageConfig
 	Kayan       KayanConfig
 	Session     SessionConfig
@@ -95,6 +96,7 @@ func Load() (*Config, error) {
 		ServerPort:  getEnv("SERVER_PORT", "8080"),
 		DatabaseURL: mustEnv("DATABASE_URL"),
 		PublicURL:   getEnv("API_BASE_URL", "http://localhost:8080"),
+		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:5173"),
 		Storage: StorageConfig{
 			Driver:       getEnv("STORAGE_DRIVER", "local"),
 			Endpoint:     getEnv("STORAGE_ENDPOINT", ""),

@@ -88,14 +88,14 @@ function CertificateCard({ cert }: { cert: CertificateEntry }) {
         {cert.failure_reason && (
           <p className="text-xs text-destructive mt-1 truncate" title={cert.failure_reason}>{cert.failure_reason}</p>
         )}
-        <a
-            href={`/verify/${cert.id}`}
+        <Link
+            to={`/verify/${cert.id}`}
             target="_blank"
             rel="noreferrer"
             className="text-xs font-mono text-primary hover:underline truncate"
           >
             {cert.id}
-          </a>
+          </Link>
       </div>
 
       {/* Actions */}

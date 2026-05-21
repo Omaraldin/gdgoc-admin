@@ -1,12 +1,14 @@
-import { useLoaderData, Link, useRevalidator } from "react-router";
+import { useLoaderData, Link, useRevalidator, useOutletContext } from "react-router";
 import { useState } from "react";
-import { listDynamicImages, deleteDynamicImage, publishDynamicImage, unpublishDynamicImage } from "~/lib/api/dynamic-images";
+import { listDynamicImages, deleteDynamicImage, publishDynamicImage, unpublishDynamicImage, cloneDynamicImage } from "~/lib/api/dynamic-images";
 import { formatDate } from "~/lib/utils";
 import { ConfirmModal } from "~/components/ConfirmModal";
 import type { DynamicImage } from "~/lib/types";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
+import { isSuperAdminRole } from "~/lib/roles";
+import type { User } from "~/lib/types";
 
 export function meta() {
   return [{ title: "Dynamic Images | GDGoC Admin" }];
@@ -19,8 +21,12 @@ export async function clientLoader() {
 export default function DynamicImagesPage() {
   const images = useLoaderData<typeof clientLoader>();
   const revalidator = useRevalidator();
+  const { user } = useOutletContext<{ user: User }>();
   const [deleteModal, setDeleteModal] = useState<{ img: DynamicImage } | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  const isOwner = (img: DynamicImage) =>
+    isSuperAdminRole(user.role) || user.id === img.owner_user_id;
 
   const togglePublish = async (img: DynamicImage) => {
     setLoadingId(img.id);
@@ -72,23 +78,63 @@ export default function DynamicImagesPage() {
                   {img.description || "No description"}
                 </p>
                 <div className="flex gap-2 flex-wrap justify-between items-center">
-                  <span className="text-xs text-muted-foreground">Updated {formatDate(img.updated_at)}</span>
+                  <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+                    <span>Updated {formatDate(img.updated_at)}</span>
+                    {img.created_by_name && <span>By {img.created_by_name}</span>}
+                  </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs h-7 px-2"
-                      disabled={loadingId === img.id}
-                      onClick={() => togglePublish(img)}
-                    >
-                      {img.status === "published" ? "Unpublish" : "Publish"}
-                    </Button>
-                    <Link
-                      to={`/dynamic-images/${img.id}/editor`}
-                      className="text-xs text-primary hover:underline font-medium self-center"
-                    >
-                      Edit
-                    </Link>
+                    {isOwner(img) ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7 px-2"
+                          disabled={loadingId === img.id}
+                          onClick={() => togglePublish(img)}
+                        >
+                          {img.status === "published" ? "Unpublish" : "Publish"}
+                        </Button>
+                        <Link
+                          to={`/dynamic-images/${img.id}/editor`}
+                          className="text-xs text-primary hover:underline font-medium self-center"
+                        >
+                          Edit
+                        </Link>
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground hover:underline self-center"
+                          disabled={loadingId === img.id + "-clone"}
+                          onClick={async () => {
+                            setLoadingId(img.id + "-clone");
+                            try { await cloneDynamicImage(img.id); revalidator.revalidate(); }
+                            finally { setLoadingId(null); }
+                          }}
+                        >
+                          {loadingId === img.id + "-clone" ? "Cloning…" : "Clone"}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-xs text-destructive hover:underline self-center"
+                          onClick={() => setDeleteModal({ img })}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-7 px-2"
+                        disabled={loadingId === img.id + "-clone"}
+                        onClick={async () => {
+                          setLoadingId(img.id + "-clone");
+                          try { await cloneDynamicImage(img.id); revalidator.revalidate(); }
+                          finally { setLoadingId(null); }
+                        }}
+                      >
+                        Clone
+                      </Button>
+                    )}
                     <Link
                       to={`/dynamic-images/${img.id}`}
                       className="text-xs text-muted-foreground hover:underline self-center"

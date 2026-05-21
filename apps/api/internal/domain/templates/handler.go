@@ -65,12 +65,28 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 }
 
 func (h *Handler) Update(c *fiber.Ctx) error {
-	// Update handled as a new version creation — stub for now
-	return apperrors.BadRequest("use POST /templates/:id/versions to save a new version")
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return apperrors.BadRequest("invalid request body")
+	}
+	if err := h.svc.UpdateMeta(c.Context(), c.Params("id"), body.Name, body.Description, caller(c)); err != nil {
+		return err
+	}
+	return c.JSON(fiber.Map{"message": "updated"})
 }
 
 func (h *Handler) Delete(c *fiber.Ctx) error {
-	return apperrors.BadRequest("archive the template instead of deleting")
+	archived, err := h.svc.Delete(c.Context(), c.Params("id"), caller(c))
+	if err != nil {
+		return err
+	}
+	if archived {
+		return c.JSON(fiber.Map{"archived": true, "message": "template has existing batches and was archived instead of deleted"})
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *Handler) Publish(c *fiber.Ctx) error {

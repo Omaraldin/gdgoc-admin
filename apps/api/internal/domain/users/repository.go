@@ -23,6 +23,8 @@ type User struct {
 type WhitelistEntry struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	ChapterID *string   `json:"chapter_id,omitempty"`
 	AddedBy   string    `json:"added_by"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -35,12 +37,16 @@ func NewRepository(db *database.DB) *Repository {
 	return &Repository{db: db.Gorm}
 }
 
-func (r *Repository) List(ctx context.Context) ([]*User, error) {
+func (r *Repository) List(ctx context.Context, chapterID *string) ([]*User, error) {
 	users := make([]*User, 0)
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, email, name, role, chapter_id, created_at, updated_at
-		FROM users WHERE deleted_at IS NULL ORDER BY created_at DESC`,
-	).Scan(&users).Error
+	query := `SELECT id, email, name, role, chapter_id, created_at, updated_at FROM users WHERE deleted_at IS NULL`
+	args := []interface{}{}
+	if chapterID != nil {
+		query += ` AND chapter_id = ?::uuid`
+		args = append(args, *chapterID)
+	}
+	query += ` ORDER BY created_at DESC`
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&users).Error
 	return users, err
 }
 
@@ -105,23 +111,31 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *Repository) ListWhitelist(ctx context.Context) ([]*WhitelistEntry, error) {
+func (r *Repository) ListWhitelist(ctx context.Context, chapterID *string) ([]*WhitelistEntry, error) {
 	entries := make([]*WhitelistEntry, 0)
-	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, email, added_by, created_at FROM whitelist
-		WHERE deleted_at IS NULL ORDER BY created_at DESC`,
-	).Scan(&entries).Error
+	query := `SELECT id, email, role, chapter_id, added_by, created_at FROM whitelist WHERE deleted_at IS NULL`
+	args := []interface{}{}
+	if chapterID != nil {
+		query += ` AND chapter_id = ?::uuid`
+		args = append(args, *chapterID)
+	}
+	query += ` ORDER BY created_at DESC`
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&entries).Error
 	return entries, err
 }
 
-func (r *Repository) AddToWhitelist(ctx context.Context, email string, addedBy string) (*WhitelistEntry, error) {
+func (r *Repository) AddToWhitelist(ctx context.Context, email, role, addedBy string, chapterID *string) (*WhitelistEntry, error) {
+	var chapterArg interface{}
+	if chapterID != nil {
+		chapterArg = *chapterID
+	}
 	var entry WhitelistEntry
 	err := r.db.WithContext(ctx).Raw(`
-		INSERT INTO whitelist (email, added_by)
-		VALUES (?, ?::uuid)
-		ON CONFLICT (email) DO UPDATE SET deleted_at = NULL, added_by = EXCLUDED.added_by
-		RETURNING id, email, added_by, created_at`,
-		email, addedBy,
+		INSERT INTO whitelist (email, role, added_by, chapter_id)
+		VALUES (?, ?, ?::uuid, ?::uuid)
+		ON CONFLICT (email) DO UPDATE SET deleted_at = NULL, added_by = EXCLUDED.added_by, role = EXCLUDED.role, chapter_id = EXCLUDED.chapter_id
+		RETURNING id, email, role, chapter_id, added_by, created_at`,
+		email, role, addedBy, chapterArg,
 	).Scan(&entry).Error
 	if err != nil {
 		return nil, err
@@ -129,14 +143,19 @@ func (r *Repository) AddToWhitelist(ctx context.Context, email string, addedBy s
 	return &entry, nil
 }
 
-func (r *Repository) RemoveFromWhitelist(ctx context.Context, id string) error {
-	result := r.db.WithContext(ctx).Exec(
-		`UPDATE whitelist SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`, id)
+func (r *Repository) RemoveFromWhitelist(ctx context.Context, id string, callerChapterID *string) error {
+	query := `UPDATE whitelist SET deleted_at = NOW() WHERE id = ?::uuid AND deleted_at IS NULL`
+	args := []interface{}{id}
+	if callerChapterID != nil {
+		query += ` AND chapter_id = ?::uuid`
+		args = append(args, *callerChapterID)
+	}
+	result := r.db.WithContext(ctx).Exec(query, args...)
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return apperrors.NotFound("whitelist entry not found")
+		return apperrors.NotFound("whitelist entry not found or access denied")
 	}
 	return nil
 }

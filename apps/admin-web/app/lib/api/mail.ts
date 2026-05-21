@@ -9,6 +9,7 @@ export interface MailTemplate {
   variables: string[];    // dynamic field keys
   status: "draft" | "published";
   created_by: string;
+  created_by_name: string;
   created_at: string;
   updated_at: string;
 }

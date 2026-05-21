@@ -117,6 +117,14 @@ func (h *Handler) UploadAsset(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(asset)
 }
 
+func (h *Handler) Clone(c *fiber.Ctx) error {
+	item, err := h.svc.Clone(c.Context(), c.Params("id"), caller(c))
+	if err != nil {
+		return err
+	}
+	return c.Status(fiber.StatusCreated).JSON(item)
+}
+
 // Render is a public endpoint: GET /images/:id?field=value&...
 // Returns a PNG image rendered from the stored scene with query param overrides.
 func (h *Handler) Render(c *fiber.Ctx) error {

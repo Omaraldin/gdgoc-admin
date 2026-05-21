@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/skip2/go-qrcode"
 	tmpl "github.com/gdgoc/admin-api/internal/domain/templates"
 )
 
@@ -59,6 +60,8 @@ func (r *SVGRenderer) Render(scene tmpl.SceneDefinition, vars map[string]string)
 			r.renderImage(&body, layer)
 		case tmpl.LayerTypeShape:
 			r.renderShape(&body, layer)
+		case tmpl.LayerTypeQR:
+			r.renderQr(&body, layer, vars)
 		}
 	}
 
@@ -147,6 +150,89 @@ func (r *SVGRenderer) renderImage(buf *bytes.Buffer, layer tmpl.Layer) {
 		`<image href="%s" x="%.2f" y="%.2f" width="%.2f" height="%.2f"%s/>`,
 		escapeAttr(layer.ImageProps.AssetKey), imgX, imgY, layer.Width, layer.Height, transform,
 	)
+}
+
+// renderQr encodes the layer content as a QR code and emits it as a group of
+// SVG <rect> elements (one per dark module). This keeps the PDF vector-clean
+// and resolution-independent.
+func (r *SVGRenderer) renderQr(buf *bytes.Buffer, layer tmpl.Layer, vars map[string]string) {
+	if layer.QrProps == nil {
+		return
+	}
+	qp := layer.QrProps
+
+	// Interpolate {{variable}} tokens in the content.
+	content := Interpolate(qp.Content, vars)
+	if content == "" {
+		content = "https://example.com"
+	}
+
+	// Map error-correction level string → go-qrcode constant.
+	var ecLevel qrcode.RecoveryLevel
+	switch strings.ToUpper(qp.ErrorCorrection) {
+	case "L":
+		ecLevel = qrcode.Low
+	case "Q":
+		ecLevel = qrcode.High
+	case "H":
+		ecLevel = qrcode.Highest
+	default:
+		ecLevel = qrcode.Medium
+	}
+
+	qr, err := qrcode.New(content, ecLevel)
+	if err != nil {
+		return
+	}
+	qr.DisableBorder = true
+
+	bitmap := qr.Bitmap()
+	if len(bitmap) == 0 {
+		return
+	}
+	nModules := len(bitmap)
+	cellW := layer.Width / float64(nModules)
+	cellH := layer.Height / float64(nModules)
+
+	dark := qp.ColorDark
+	if dark == "" {
+		dark = "#000000"
+	}
+	light := qp.ColorLight
+	if light == "" {
+		light = "#ffffff"
+	}
+
+	// Compute origin (top-left of layer in SVG coords).
+	oxSVG := layer.X - layer.Width/2
+	expandoySVG := layer.Y - layer.Height/2
+
+	var transform string
+	if layer.Rotation != 0 {
+		transform = fmt.Sprintf(` transform="rotate(%.2f %.2f %.2f)"`, layer.Rotation, layer.X, layer.Y)
+	}
+
+	// Outer group: background fill + rotation.
+	fmt.Fprintf(buf,
+		`<g%s><rect x="%.3f" y="%.3f" width="%.3f" height="%.3f" fill="%s"/>`,
+		transform, oxSVG, expandoySVG, layer.Width, layer.Height, escapeAttr(r.color(light)),
+	)
+
+	// One <rect> per dark module.
+	for row, cols := range bitmap {
+		for col, isDark := range cols {
+			if !isDark {
+				continue
+			}
+			mx := oxSVG + float64(col)*cellW
+			my := expandoySVG + float64(row)*cellH
+			fmt.Fprintf(buf,
+				`<rect x="%.3f" y="%.3f" width="%.3f" height="%.3f" fill="%s"/>`,
+				mx, my, cellW, cellH, escapeAttr(r.color(dark)),
+			)
+		}
+	}
+	buf.WriteString(`</g>`)
 }
 
 func sortLayersByZ(layers []tmpl.Layer) {

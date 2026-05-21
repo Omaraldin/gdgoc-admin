@@ -42,6 +42,11 @@ export async function unpublishDynamicImage(id: string): Promise<DynamicImage> {
   return res.data;
 }
 
+export async function cloneDynamicImage(id: string): Promise<DynamicImage> {
+  const res = await apiClient.post<DynamicImage>(`/dynamic-images/${id}/clone`);
+  return res.data;
+}
+
 /** Returns the public render URL for a dynamic image with given variable values. */
 export function getDynamicImageUrl(
   id: string,

@@ -53,6 +53,7 @@ export default function BatchesPage() {
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Done</TableHead>
                 <TableHead className="text-right">Failed</TableHead>
+                <TableHead>Created By</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead />
               </TableRow>
@@ -65,6 +66,7 @@ export default function BatchesPage() {
                   <TableCell className="text-right">{b.total_count}</TableCell>
                   <TableCell className="text-right text-status-green">{b.success_count}</TableCell>
                   <TableCell className="text-right text-status-red">{b.failed_count}</TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{b.created_by_name || "—"}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">{formatDate(b.created_at)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-3">

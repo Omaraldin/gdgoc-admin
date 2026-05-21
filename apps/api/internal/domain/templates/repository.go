@@ -21,11 +21,13 @@ func NewRepository(db *database.DB) *Repository {
 func (r *Repository) List(ctx context.Context, ownerChapterID string) ([]*Template, error) {
 	templates := make([]*Template, 0)
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, description, owner_user_id, owner_chapter_id, visibility, status,
-		       source_template_id, current_version_id, created_at, updated_at
-		FROM templates
-		WHERE owner_chapter_id = ? AND deleted_at IS NULL
-		ORDER BY updated_at DESC
+		SELECT t.id, t.name, t.description, t.owner_user_id, t.owner_chapter_id, t.visibility, t.status,
+		       t.source_template_id, t.current_version_id, t.created_at, t.updated_at,
+		       COALESCE(u.name, '') AS created_by_name
+		FROM templates t
+		LEFT JOIN users u ON u.id = t.owner_user_id
+		WHERE t.owner_chapter_id = ? AND t.deleted_at IS NULL
+		ORDER BY t.updated_at DESC
 	`, ownerChapterID).Scan(&templates).Error
 	return templates, err
 }
@@ -33,11 +35,13 @@ func (r *Repository) List(ctx context.Context, ownerChapterID string) ([]*Templa
 func (r *Repository) ListAll(ctx context.Context) ([]*Template, error) {
 	templates := make([]*Template, 0)
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, description, owner_user_id, owner_chapter_id, visibility, status,
-		       source_template_id, current_version_id, created_at, updated_at
-		FROM templates
-		WHERE deleted_at IS NULL
-		ORDER BY updated_at DESC
+		SELECT t.id, t.name, t.description, t.owner_user_id, t.owner_chapter_id, t.visibility, t.status,
+		       t.source_template_id, t.current_version_id, t.created_at, t.updated_at,
+		       COALESCE(u.name, '') AS created_by_name
+		FROM templates t
+		LEFT JOIN users u ON u.id = t.owner_user_id
+		WHERE t.deleted_at IS NULL
+		ORDER BY t.updated_at DESC
 	`).Scan(&templates).Error
 	return templates, err
 }
@@ -45,11 +49,13 @@ func (r *Repository) ListAll(ctx context.Context) ([]*Template, error) {
 func (r *Repository) ListPublic(ctx context.Context) ([]*Template, error) {
 	templates := make([]*Template, 0)
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, description, owner_user_id, owner_chapter_id, visibility, status,
-		       source_template_id, current_version_id, created_at, updated_at
-		FROM templates
-		WHERE visibility = 'public' AND status = 'published' AND deleted_at IS NULL
-		ORDER BY updated_at DESC
+		SELECT t.id, t.name, t.description, t.owner_user_id, t.owner_chapter_id, t.visibility, t.status,
+		       t.source_template_id, t.current_version_id, t.created_at, t.updated_at,
+		       COALESCE(u.name, '') AS created_by_name
+		FROM templates t
+		LEFT JOIN users u ON u.id = t.owner_user_id
+		WHERE t.visibility = 'public' AND t.status = 'published' AND t.deleted_at IS NULL
+		ORDER BY t.updated_at DESC
 	`).Scan(&templates).Error
 	return templates, err
 }
@@ -57,9 +63,12 @@ func (r *Repository) ListPublic(ctx context.Context) ([]*Template, error) {
 func (r *Repository) GetByID(ctx context.Context, id string) (*Template, error) {
 	var t Template
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, description, owner_user_id, owner_chapter_id, visibility, status,
-		       source_template_id, current_version_id, created_at, updated_at
-		FROM templates WHERE id = ? AND deleted_at IS NULL
+		SELECT t.id, t.name, t.description, t.owner_user_id, t.owner_chapter_id, t.visibility, t.status,
+		       t.source_template_id, t.current_version_id, t.created_at, t.updated_at,
+		       COALESCE(u.name, '') AS created_by_name
+		FROM templates t
+		LEFT JOIN users u ON u.id = t.owner_user_id
+		WHERE t.id = ? AND t.deleted_at IS NULL
 	`, id).Scan(&t).Error
 	if err != nil || t.ID == "" {
 		return nil, apperrors.NotFound("template not found")
@@ -108,6 +117,43 @@ func (r *Repository) Create(ctx context.Context, input CreateTemplateInput) (*Te
 		return nil, err
 	}
 	return r.GetByID(ctx, tmplID)
+}
+
+// HasBatches returns true if any issuance batch references this template.
+func (r *Repository) HasBatches(ctx context.Context, id string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Raw(
+		`SELECT COUNT(*) FROM issuance_batches WHERE template_id = ?`, id,
+	).Scan(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// HardDelete soft-deletes the template (sets deleted_at).
+func (r *Repository) HardDelete(ctx context.Context, id string) error {
+	result := r.db.WithContext(ctx).Exec(
+		`UPDATE templates SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return apperrors.NotFound("template not found")
+	}
+	return nil
+}
+
+func (r *Repository) UpdateMeta(ctx context.Context, id, name, description string) error {
+	result := r.db.WithContext(ctx).Exec(
+		`UPDATE templates SET name = ?, description = ?, updated_at = NOW() WHERE id = ? AND deleted_at IS NULL`,
+		name, description, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return apperrors.NotFound("template not found")
+	}
+	return nil
 }
 
 func (r *Repository) SetStatus(ctx context.Context, id string, status TemplateStatus) error {

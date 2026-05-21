@@ -10,6 +10,7 @@ import { PathRenderer } from "./PathRenderer";
 import { EditorTextNode } from "./EditorTextNode";
 import { EditorImageNode } from "./EditorImageNode";
 import { EditorShapeNode } from "./EditorShapeNode";
+import { EditorQrNode } from "./EditorQrNode";
 
 interface CanvasViewportProps {
   scene: SceneDefinition;
@@ -439,6 +440,20 @@ export function CanvasViewport({
                 }
                 return (
                   <EditorShapeNode
+                    key={layer.id}
+                    layer={layer}
+                    isSelected={layerIsSelected}
+                    onSelect={() => onSelectLayerAdditive(layer.id, false)}
+                    onUpdate={(u) => onUpdateLayer(layer.id, u)}
+                    getSnapResult={getSnapResult}
+                    setGuides={setGuides}
+                    {...groupDragProps}
+                  />
+                );
+              }
+              if (layer.type === "qr" && layer.qr_props) {
+                return (
+                  <EditorQrNode
                     key={layer.id}
                     layer={layer}
                     isSelected={layerIsSelected}

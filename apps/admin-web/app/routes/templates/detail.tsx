@@ -1,7 +1,7 @@
-import { useLoaderData, Link, useNavigate } from "react-router";
+import { useLoaderData, Link, useNavigate, useOutletContext } from "react-router";
 import { useState } from "react";
 import type { Route } from "./+types/detail";
-import { getTemplate, publishTemplate, archiveTemplate, cloneTemplate } from "~/lib/api/templates";
+import { getTemplate, publishTemplate, archiveTemplate, deleteTemplate, cloneTemplate } from "~/lib/api/templates";
 import { formatDate } from "~/lib/utils";
 import { ConfirmModal } from "~/components/ConfirmModal";
 import { Button } from "~/components/ui/button";
@@ -10,6 +10,8 @@ import { Card, CardContent } from "~/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { isSuperAdminRole } from "~/lib/roles";
+import type { User } from "~/lib/types";
 
 export function meta() {
   return [{ title: "Template | GDGoC Admin" }];
@@ -23,6 +25,10 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 export default function TemplateDetailPage() {
   const { template } = useLoaderData<typeof clientLoader>();
   const navigate = useNavigate();
+  const { user } = useOutletContext<{ user: User }>();
+
+  const isOwner = isSuperAdminRole(user.role) || user.id === template.owner_user_id;
+
   const [modal, setModal] = useState<{ title: string; message?: string; destructive?: boolean; confirmLabel?: string; onConfirm: () => void } | null>(null);
   const [cloneDialog, setCloneDialog] = useState(false);
   const [cloneName, setCloneName] = useState("");
@@ -52,6 +58,23 @@ export default function TemplateDetailPage() {
     });
   };
 
+  const handleDelete = () => {
+    setModal({
+      title: "Delete template?",
+      message: "If this template has existing batches it will be archived instead of permanently deleted.",
+      destructive: true,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        const { archived } = await deleteTemplate(template.id);
+        if (archived) {
+          navigate(0); // reload to show archived status
+        } else {
+          navigate("/templates");
+        }
+      },
+    });
+  };
+
   const handleClone = () => {
     setCloneName(template.name + " (Clone)");
     setCloneDialog(true);
@@ -73,19 +96,23 @@ export default function TemplateDetailPage() {
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <h1 className="text-xl font-semibold text-foreground">{template.name}</h1>
         <div className="flex gap-2 flex-wrap justify-end">
-          <Button asChild size="sm">
-            <Link to={`/templates/${template.id}/editor`}>Open Editor</Link>
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleClone}>Clone</Button>
-          {template.status === "draft" && (
-            <Button variant="outline" size="sm" onClick={handlePublish} className="text-status-green border-green-200 hover:bg-green-soft">
-              Publish
-            </Button>
-          )}
-          {template.status !== "archived" && (
-            <Button variant="outline" size="sm" onClick={handleArchive} className="text-destructive border-destructive/30 hover:bg-red-soft">
-              Archive
-            </Button>
+          {isOwner ? (
+            <>
+              <Button asChild size="sm">
+                <Link to={`/templates/${template.id}/editor`}>Open Editor</Link>
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleClone}>Clone</Button>
+              {template.status === "draft" && (
+                <Button variant="outline" size="sm" onClick={handlePublish} className="text-status-green border-green-200 hover:bg-green-soft">
+                  Publish
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={handleDelete} className="text-destructive border-destructive/30 hover:bg-red-soft">
+                Delete
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={handleClone}>Clone &amp; Edit</Button>
           )}
         </div>
       </div>

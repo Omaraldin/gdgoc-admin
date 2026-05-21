@@ -66,8 +66,8 @@ func (h *Handler) Create(c *fiber.Ctx) error {
 	if err := c.BodyParser(&input); err != nil {
 		return apperrors.BadRequest("invalid request body")
 	}
-	if input.Name == "" || input.Email == "" {
-		return apperrors.BadRequest("name and email are required")
+	if input.Name == "" {
+		return apperrors.BadRequest("name is required")
 	}
 	if input.SinceYear != nil && (*input.SinceYear < 1900 || *input.SinceYear > 9999) {
 		return apperrors.BadRequest("since_year must be between 1900 and 9999")

@@ -25,6 +25,7 @@ type IssuanceWorker struct {
 	cfg              config.WorkerConfig
 	oauthCreds       mail.OAuthCreds
 	publicURL        string
+	frontendURL      string
 }
 
 func NewIssuanceWorker(
@@ -37,6 +38,7 @@ func NewIssuanceWorker(
 	cfg config.WorkerConfig,
 	oauthCreds mail.OAuthCreds,
 	publicURL string,
+	frontendURL string,
 ) *IssuanceWorker {
 	return &IssuanceWorker{
 		db:               db,
@@ -48,6 +50,7 @@ func NewIssuanceWorker(
 		cfg:              cfg,
 		oauthCreds:       oauthCreds,
 		publicURL:        publicURL,
+		frontendURL:      frontendURL,
 	}
 }
 
@@ -192,7 +195,9 @@ func (w *IssuanceWorker) sendCertificateMail(
 	}
 
 	pdfURL := fmt.Sprintf("%s/api/v1/certificates/%s/render?format=pdf", w.publicURL, rec.ID)
-	verifyURL := fmt.Sprintf("%s/verify/%s", w.publicURL, rec.ID)
+	// cert.verify_url points to the frontend verify page (human-readable link in emails).
+	// The OG share endpoint is on the API; only the LinkedIn crawler needs that.
+	verifyURL := fmt.Sprintf("%s/verify/%s", w.frontendURL, rec.ID)
 
 	if batch.MailTemplateID != nil && *batch.MailTemplateID != "" && w.mailTemplateRepo != nil {
 		tmpl, err := w.mailTemplateRepo.Get(ctx, *batch.MailTemplateID, batch.ChapterID)
@@ -210,7 +215,11 @@ func (w *IssuanceWorker) sendCertificateMail(
 			mailVars["cert.id"] = rec.ID
 			mailVars["cert.pdf_url"] = pdfURL
 			mailVars["cert.verify_url"] = verifyURL
+
 			mailVars["batch.name"] = batch.Name
+			mailVars["batch.cert_name"] = batch.CertName
+			mailVars["batch.cert_description"] = batch.CertDescription
+
 			// Add chapter-scoped variables so {{chapter.name}} etc. work in mail templates.
 			if ch, err := w.chapterRepo.GetByID(ctx, batch.ChapterID); err == nil {
 				mailVars["chapter.name"] = ch.Name
@@ -229,23 +238,27 @@ func (w *IssuanceWorker) sendCertificateMail(
 			// Values may be {{key}} references — resolve them against layer-1 vars first
 			// so a mapping like role→{{global.role}} resolves to the actual recipient value.
 			for k, v := range batch.MailVariables {
-				resolved := interpolate(v, mailVars)
+				resolved := Interpolate(v, mailVars)
 				mailVars[k] = resolved
 				mailVars["global."+k] = resolved // also accessible as {{global.key}}
 			}
-			subject := interpolate(tmpl.Subject, mailVars)
-			body := interpolate(tmpl.Body, mailVars)
+			subject := Interpolate(tmpl.Subject, mailVars)
+			body := Interpolate(tmpl.Body, mailVars)
 			return mail.SendMail(rec.Email, subject, body, true, *smtpCfg, w.oauthCreds)
 		}
 	}
 
 	// Default fallback when no mail template is configured
-	subject := fmt.Sprintf("Your certificate from %s", batch.Name)
+	displayName := batch.CertName
+	if displayName == "" {
+		displayName = batch.Name
+	}
+	subject := fmt.Sprintf("Your certificate from %s", displayName)
 	body := fmt.Sprintf(
 		"<p>Congratulations!</p>"+
 			"<p>Your certificate for <strong>%s</strong> is ready.</p>"+
 			"<p><a href=\""+pdfURL+"\">Download your certificate (PDF)</a></p>",
-		batch.Name,
+		displayName,
 	)
 	return mail.SendMail(rec.Email, subject, body, true, *smtpCfg, w.oauthCreds)
 }

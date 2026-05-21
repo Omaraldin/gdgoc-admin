@@ -91,7 +91,7 @@ func (h *TemplateHandler) Update(c *fiber.Ctx) error {
 	if err := c.BodyParser(&in); err != nil {
 		return apperrors.BadRequest("invalid request body")
 	}
-	t, err := h.svc.Update(c.Context(), id, in, caller.ChapterID)
+	t, err := h.svc.Update(c.Context(), id, in, caller.ChapterID, caller.ID, auth.IsSuperAdmin(caller.Role))
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func (h *TemplateHandler) Delete(c *fiber.Ctx) error {
 	if id == "" {
 		return apperrors.BadRequest("id is required")
 	}
-	if err := h.svc.Delete(c.Context(), id, caller.ChapterID); err != nil {
+	if err := h.svc.Delete(c.Context(), id, caller.ChapterID, caller.ID, auth.IsSuperAdmin(caller.Role)); err != nil {
 		return err
 	}
 	return c.SendStatus(fiber.StatusNoContent)
@@ -118,7 +118,7 @@ func (h *TemplateHandler) Publish(c *fiber.Ctx) error {
 	if id == "" {
 		return apperrors.BadRequest("id is required")
 	}
-	t, err := h.svc.Publish(c.Context(), id, caller.ChapterID)
+	t, err := h.svc.Publish(c.Context(), id, caller.ChapterID, caller.ID, auth.IsSuperAdmin(caller.Role))
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (h *TemplateHandler) Unpublish(c *fiber.Ctx) error {
 	if id == "" {
 		return apperrors.BadRequest("id is required")
 	}
-	t, err := h.svc.Unpublish(c.Context(), id, caller.ChapterID)
+	t, err := h.svc.Unpublish(c.Context(), id, caller.ChapterID, caller.ID, auth.IsSuperAdmin(caller.Role))
 	if err != nil {
 		return err
 	}

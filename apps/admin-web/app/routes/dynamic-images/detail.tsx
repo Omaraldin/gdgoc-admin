@@ -1,7 +1,7 @@
-import { useLoaderData, Link, useNavigate, useRevalidator } from "react-router";
+import { useLoaderData, Link, useNavigate, useRevalidator, useOutletContext } from "react-router";
 import { useState } from "react";
 import type { Route } from "./+types/detail";
-import { getDynamicImage, deleteDynamicImage, getDynamicImageUrl, publishDynamicImage, unpublishDynamicImage } from "~/lib/api/dynamic-images";
+import { getDynamicImage, deleteDynamicImage, getDynamicImageUrl, publishDynamicImage, unpublishDynamicImage, cloneDynamicImage } from "~/lib/api/dynamic-images";
 import { formatDate } from "~/lib/utils";
 import { ConfirmModal } from "~/components/ConfirmModal";
 import { Button } from "~/components/ui/button";
@@ -9,6 +9,8 @@ import { Card, CardContent } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Badge } from "~/components/ui/badge";
+import { isSuperAdminRole } from "~/lib/roles";
+import type { User } from "~/lib/types";
 
 export function meta() {
   return [{ title: "Dynamic Image | GDGoC Admin" }];
@@ -22,9 +24,13 @@ export default function DynamicImageDetailPage() {
   const image = useLoaderData<typeof clientLoader>();
   const navigate = useNavigate();
   const revalidator = useRevalidator();
+  const { user } = useOutletContext<{ user: User }>();
+
+  const isOwner = isSuperAdminRole(user.role) || user.id === image.owner_user_id;
 
   const [deleteModal, setDeleteModal] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [cloneLoading, setCloneLoading] = useState(false);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>(
     Object.fromEntries(image.fields.map((f) => [f.key, ""])),
   );
@@ -68,25 +74,62 @@ export default function DynamicImageDetailPage() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={publishLoading}
-            onClick={handleTogglePublish}
-          >
-            {image.status === "published" ? "Unpublish" : "Publish"}
-          </Button>
-          <Button asChild size="sm">
-            <Link to={`/dynamic-images/${image.id}/editor`}>Open Editor</Link>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive border-destructive/30 hover:bg-red-soft"
-            onClick={() => setDeleteModal(true)}
-          >
-            Delete
-          </Button>
+          {isOwner ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={publishLoading}
+                onClick={handleTogglePublish}
+              >
+                {image.status === "published" ? "Unpublish" : "Publish"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={cloneLoading}
+                onClick={async () => {
+                  setCloneLoading(true);
+                  try {
+                    const copy = await cloneDynamicImage(image.id);
+                    navigate(`/dynamic-images/${copy.id}/editor`);
+                  } finally {
+                    setCloneLoading(false);
+                  }
+                }}
+              >
+                {cloneLoading ? "Cloning…" : "Clone"}
+              </Button>
+              <Button asChild size="sm">
+                <Link to={`/dynamic-images/${image.id}/editor`}>Open Editor</Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive border-destructive/30 hover:bg-red-soft"
+                onClick={() => setDeleteModal(true)}
+              >
+                Delete
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={cloneLoading}
+              onClick={async () => {
+                setCloneLoading(true);
+                try {
+                  const copy = await cloneDynamicImage(image.id);
+                  navigate(`/dynamic-images/${copy.id}/editor`);
+                } finally {
+                  setCloneLoading(false);
+                }
+              }}
+            >
+              {cloneLoading ? "Cloning…" : "Clone & Edit"}
+            </Button>
+          )}
         </div>
       </div>
 

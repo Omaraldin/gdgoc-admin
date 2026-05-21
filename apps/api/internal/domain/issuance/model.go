@@ -4,6 +4,28 @@ import (
 	"time"
 )
 
+// CertMetadata represents a named certification programme that groups batches.
+type CertMetadata struct {
+	ID          string    `json:"id"`
+	ChapterID   string    `json:"chapter_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// CreateCertMetadataInput is the request body for creating a new cert metadata record.
+type CreateCertMetadataInput struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// UpdateCertMetadataInput is the request body for updating a cert metadata record.
+type UpdateCertMetadataInput struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 type BatchStatus string
 
 const (
@@ -31,6 +53,9 @@ type IssuanceBatch struct {
 	TemplateID        string            `json:"template_id"`
 	TemplateVersionID string            `json:"template_version_id"`
 	Name              string            `json:"name"`
+	CertID            *string           `json:"cert_id,omitempty"`
+	CertName          string            `json:"cert_name,omitempty"`
+	CertDescription   string            `json:"cert_description,omitempty"`
 	Status            BatchStatus       `json:"status"`
 	SendMail          bool              `json:"send_mail"`
 	IsPrintable       bool              `json:"is_printable"`
@@ -40,6 +65,7 @@ type IssuanceBatch struct {
 	SuccessCount      int               `json:"success_count"`
 	FailedCount       int               `json:"failed_count"`
 	CreatedByUserID   string            `json:"created_by_user_id"`
+	CreatedByName     string            `json:"created_by_name"`
 	CreatedAt         time.Time         `json:"created_at"`
 	UpdatedAt         time.Time         `json:"updated_at"`
 }
@@ -63,6 +89,8 @@ type BatchRecipient struct {
 type CreateBatchInput struct {
 	TemplateID     string            `json:"template_id"`
 	Name           string            `json:"name"`
+	CertID         *string           `json:"cert_id,omitempty"`
+	CertName       string            `json:"cert_name"`
 	Recipients     []RecipientInput  `json:"recipients"`
 	SendMail       bool              `json:"send_mail"`
 	IsPrintable    bool              `json:"is_printable"`

@@ -8,6 +8,7 @@ import Highlight from "@tiptap/extension-highlight";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
+import TextAlign from "@tiptap/extension-text-align";
 import { useEffect, useCallback, useRef, useState } from "react";
 import { uploadMailImage } from "~/lib/api/mail";
 
@@ -103,6 +104,31 @@ const icons = {
       <path d="M16 5h2M19 5v2" strokeWidth="1.8"/>
     </svg>
   ),
+  code: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+    </svg>
+  ),
+  alignLeft: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="21" y1="6" x2="3" y2="6"/><line x1="15" y1="12" x2="3" y2="12"/><line x1="17" y1="18" x2="3" y2="18"/>
+    </svg>
+  ),
+  alignCenter: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="21" y1="6" x2="3" y2="6"/><line x1="17" y1="12" x2="7" y2="12"/><line x1="19" y1="18" x2="5" y2="18"/>
+    </svg>
+  ),
+  alignRight: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="9" y2="12"/><line x1="21" y1="18" x2="7" y2="18"/>
+    </svg>
+  ),
+  alignJustify: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="12" x2="3" y2="12"/><line x1="21" y1="18" x2="3" y2="18"/>
+    </svg>
+  ),
 };
 
 // ── Toolbar button ────────────────────────────────────────────────────────────
@@ -145,6 +171,64 @@ function Btn({
 
 function Divider() {
   return <div className="w-px h-5 bg-border mx-1 self-center flex-shrink-0" />;
+}
+
+// ── Variable chips for URL inputs ─────────────────────────────────────────────
+
+function insertVarAtCursor(
+  inputRef: React.RefObject<HTMLInputElement>,
+  current: string,
+  variable: string,
+  onChange: (v: string) => void,
+) {
+  const el = inputRef.current;
+  const start = el?.selectionStart ?? current.length;
+  const end = el?.selectionEnd ?? current.length;
+  const insertion = `{{${variable}}}`;
+  const next = current.slice(0, start) + insertion + current.slice(end);
+  onChange(next);
+  requestAnimationFrame(() => {
+    if (el) {
+      const pos = start + insertion.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    }
+  });
+}
+
+function UrlVariableChips({
+  variables,
+  inputRef,
+  url,
+  onChange,
+}: {
+  variables: string[];
+  inputRef: React.RefObject<HTMLInputElement>;
+  url: string;
+  onChange: (v: string) => void;
+}) {
+  if (!variables.length) return null;
+  return (
+    <div className="mt-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-text-3 mb-1">Insert variable</p>
+      <div className="flex flex-wrap gap-1">
+        {variables.map((v) => (
+          <button
+            key={v}
+            type="button"
+            title={`Insert {{${v}}}`}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              insertVarAtCursor(inputRef, url, v, onChange);
+            }}
+            className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+          >
+            {`{{${v}}}`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── Color palette ─────────────────────────────────────────────────────────────
@@ -310,7 +394,7 @@ function HighlightPicker({
 
 // ── Image URL popover ─────────────────────────────────────────────────────────
 
-function ImageUrlPopover({ onInsert }: { onInsert: (url: string) => void }) {
+function ImageUrlPopover({ onInsert, variables = [] }: { onInsert: (url: string) => void; variables?: string[] }) {
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -362,16 +446,17 @@ function ImageUrlPopover({ onInsert }: { onInsert: (url: string) => void }) {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3 mb-2">Insert image URL</p>
           <input
             ref={inputRef}
-            type="url"
+            type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") { e.preventDefault(); handleInsert(); }
               if (e.key === "Escape") { setOpen(false); setUrl(""); }
             }}
-            placeholder="https://example.com/image.png"
+            placeholder="https://example.com/image.png or {{variable}}"
             className="w-full text-sm px-2.5 py-1.5 rounded border border-border bg-canvas text-text-1 placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-g-blue/40"
           />
+          <UrlVariableChips variables={variables} inputRef={inputRef} url={url} onChange={setUrl} />
           <div className="flex justify-end gap-2 mt-2">
             <button
               type="button"
@@ -397,7 +482,7 @@ function ImageUrlPopover({ onInsert }: { onInsert: (url: string) => void }) {
 
 // ── Link popover ─────────────────────────────────────────────────────────────
 
-function LinkPopover({ editor }: { editor: Editor }) {
+function LinkPopover({ editor, variables = [] }: { editor: Editor; variables?: string[] }) {
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -456,16 +541,17 @@ function LinkPopover({ editor }: { editor: Editor }) {
           </p>
           <input
             ref={inputRef}
-            type="url"
+            type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") { e.preventDefault(); handleApply(); }
               if (e.key === "Escape") { setOpen(false); setUrl(""); }
             }}
-            placeholder="https://example.com"
+            placeholder="https://example.com or {{variable}}"
             className="w-full text-sm px-2.5 py-1.5 rounded border border-border bg-canvas text-text-1 placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-g-blue/40"
           />
+          <UrlVariableChips variables={variables} inputRef={inputRef} url={url} onChange={setUrl} />
           <div className="flex items-center gap-2 mt-2">
             {isActive && (
               <button
@@ -519,6 +605,7 @@ export function RichEditor({
 }: RichEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [codeView, setCodeView] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -527,9 +614,10 @@ export function RichEditor({
       Color,
       Underline,
       Highlight.configure({ multicolor: true }),
-      Link.configure({ openOnClick: false, HTMLAttributes: { class: "text-g-blue underline" } }),
+      Link.configure({ openOnClick: false, validate: () => true, HTMLAttributes: { class: "text-g-blue underline" } }),
       Image.configure({ HTMLAttributes: { class: "max-w-full rounded" } }),
       Placeholder.configure({ placeholder }),
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
     ],
     editorProps: {
       attributes: {
@@ -628,6 +716,22 @@ export function RichEditor({
 
         <Divider />
 
+        {/* Alignment */}
+        <Btn title="Align left" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()}>
+          {icons.alignLeft}
+        </Btn>
+        <Btn title="Align center" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()}>
+          {icons.alignCenter}
+        </Btn>
+        <Btn title="Align right" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()}>
+          {icons.alignRight}
+        </Btn>
+        <Btn title="Justify" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()}>
+          {icons.alignJustify}
+        </Btn>
+
+        <Divider />
+
         {/* Lists */}
         <Btn title="Bullet list" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
           {icons.bulletList}
@@ -642,11 +746,12 @@ export function RichEditor({
         <Btn title="Blockquote" active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
           {icons.blockquote}
         </Btn>
-        <LinkPopover editor={editor} />
+        <LinkPopover editor={editor} variables={variables} />
         <Btn title={uploading ? "Uploading…" : "Upload image"} disabled={uploading} onClick={() => fileInputRef.current?.click()}>
           {uploading ? icons.imageLoading : icons.image}
         </Btn>
         <ImageUrlPopover
+          variables={variables}
           onInsert={(url) =>
             editor.chain().focus().setImage({ src: url }).run()
           }
@@ -677,7 +782,11 @@ export function RichEditor({
                   title={`Insert {{${v}}}`}
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    insertVariable(v);
+                    if (codeView) {
+                      onChange(value + `{{${v}}}`);
+                    } else {
+                      insertVariable(v);
+                    }
                   }}
                   className="text-[11px] font-mono px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
                 >
@@ -687,14 +796,36 @@ export function RichEditor({
             </div>
           </>
         )}
+
+        {/* Code view toggle */}
+        <div className="ml-auto pl-1">
+          <Btn
+            title={codeView ? "Switch to rich editor" : "Edit raw HTML"}
+            active={codeView}
+            onClick={() => setCodeView((v) => !v)}
+          >
+            {icons.code}
+          </Btn>
+        </div>
       </div>
 
-      {/* ── Editor content area ────────────────────────────────────────────── */}
-      <EditorContent
-        editor={editor}
-        className="px-5 py-4 [&_.ProseMirror]:min-h-[inherit]"
-        style={{ minHeight }}
-      />
+      {/* ── Editor content area / raw HTML textarea ────────────────────────── */}
+      {codeView ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+          className="w-full resize-y font-mono text-xs px-5 py-4 bg-canvas text-text-1 focus:outline-none"
+          style={{ minHeight }}
+          placeholder="<p>Write raw HTML here… use {{variable}} for dynamic content</p>"
+        />
+      ) : (
+        <EditorContent
+          editor={editor}
+          className="px-5 py-4 [&_.ProseMirror]:min-h-[inherit]"
+          style={{ minHeight }}
+        />
+      )}
     </div>
   );
 }

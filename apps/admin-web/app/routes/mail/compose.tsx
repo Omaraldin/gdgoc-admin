@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext } from "react-router";
 import axios from "axios";
 import { apiClient } from "~/lib/api/client";
 import { listMailTemplates, type MailTemplate } from "~/lib/api/mail";
+import { interpolate } from "~/lib/interpolate";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -27,10 +28,6 @@ import type { User } from "~/lib/types";
 
 export function meta() {
   return [{ title: "Compose Email | GDGoC Admin" }];
-}
-
-function interpolate(text: string, vars: Record<string, string>): string {
-  return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }
 
 export default function ComposeMailPage() {

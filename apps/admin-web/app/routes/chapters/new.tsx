@@ -47,7 +47,7 @@ export default function NewChapterPage() {
       const parsedSinceYear = sinceYear.trim() === "" ? undefined : Number.parseInt(sinceYear, 10);
       const ch = await createChapter({
         name,
-        email,
+        email: email.trim() || undefined,
         code: code.toUpperCase().trim() || undefined,
         since_year: Number.isFinite(parsedSinceYear) ? parsedSinceYear : undefined,
         leader_codename: leaderCodename.trim() || undefined,
@@ -83,8 +83,9 @@ export default function NewChapterPage() {
               <p className="text-xs text-muted-foreground">Short uppercase abbreviation used in certificate IDs.</p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-ch-email">Chapter Email *</Label>
-              <Input id="new-ch-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Label htmlFor="new-ch-email">Chapter Email</Label>
+              <Input id="new-ch-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Optional — the chapter leader can connect Gmail or Outlook later.</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="new-ch-since-year">Since Year</Label>

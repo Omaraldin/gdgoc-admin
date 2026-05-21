@@ -13,9 +13,14 @@ const SYSTEM_VARS: { key: string; label: string }[] = [
   { key: "cert.id",          label: "Certificate ID / code" },
   { key: "cert.pdf_url",     label: "Certificate PDF download link" },
   { key: "cert.verify_url",  label: "Certificate verification link" },
-  { key: "batch.name",       label: "Batch / event name" },
+  { key: "batch.name",             label: "Batch name" },
+  { key: "batch.cert_name",        label: "Certificate programme name" },
+  { key: "batch.cert_description", label: "Certificate programme description" },
   { key: "chapter.name",     label: "Chapter name" },
   { key: "chapter.leader",   label: "Chapter leader name" },
+  { key: "chapter.leader_codename", label: "Chapter leader codename" },
+  { key: "chapter.code",     label: "Chapter code" },
+  { key: "chapter.since",    label: "Chapter since" },
 ];
 
 interface MailTemplateFormProps {

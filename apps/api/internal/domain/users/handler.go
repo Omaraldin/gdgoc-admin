@@ -16,7 +16,12 @@ func NewHandler(svc *Service) *Handler {
 }
 
 func (h *Handler) List(c *fiber.Ctx) error {
-	users, err := h.svc.List(c.Context())
+	caller := c.Locals(middleware.ContextKeyUser).(*auth.SessionUser)
+	var chapterFilter *string
+	if !auth.IsSuperAdmin(caller.Role) && caller.ChapterID != "" {
+		chapterFilter = &caller.ChapterID
+	}
+	users, err := h.svc.List(c.Context(), chapterFilter)
 	if err != nil {
 		return err
 	}
@@ -56,7 +61,12 @@ func (h *Handler) Delete(c *fiber.Ctx) error {
 }
 
 func (h *Handler) ListWhitelist(c *fiber.Ctx) error {
-	entries, err := h.svc.ListWhitelist(c.Context())
+	caller := c.Locals(middleware.ContextKeyUser).(*auth.SessionUser)
+	var chapterFilter *string
+	if !auth.IsSuperAdmin(caller.Role) && caller.ChapterID != "" {
+		chapterFilter = &caller.ChapterID
+	}
+	entries, err := h.svc.ListWhitelist(c.Context(), chapterFilter)
 	if err != nil {
 		return err
 	}
@@ -66,12 +76,26 @@ func (h *Handler) ListWhitelist(c *fiber.Ctx) error {
 func (h *Handler) AddToWhitelist(c *fiber.Ctx) error {
 	var body struct {
 		Email string `json:"email"`
+		Role  string `json:"role"`
 	}
 	if err := c.BodyParser(&body); err != nil || body.Email == "" {
 		return apperrors.BadRequest("email is required")
 	}
+	if body.Role == "" {
+		body.Role = auth.RoleChapterLeader
+	}
 	caller := c.Locals(middleware.ContextKeyUser).(*auth.SessionUser)
-	entry, err := h.svc.AddToWhitelist(c.Context(), body.Email, caller.ID)
+	var chapterID *string
+	if !auth.IsSuperAdmin(caller.Role) {
+		if body.Role == auth.RoleSuperAdmin {
+			return apperrors.Forbidden("chapter leaders cannot assign the super_admin role")
+		}
+		if caller.ChapterID == "" {
+			return apperrors.Forbidden("you are not associated with a chapter")
+		}
+		chapterID = &caller.ChapterID
+	}
+	entry, err := h.svc.AddToWhitelist(c.Context(), body.Email, body.Role, caller.ID, chapterID)
 	if err != nil {
 		return err
 	}
@@ -79,7 +103,15 @@ func (h *Handler) AddToWhitelist(c *fiber.Ctx) error {
 }
 
 func (h *Handler) RemoveFromWhitelist(c *fiber.Ctx) error {
-	if err := h.svc.RemoveFromWhitelist(c.Context(), c.Params("id")); err != nil {
+	caller := c.Locals(middleware.ContextKeyUser).(*auth.SessionUser)
+	var chapterID *string
+	if !auth.IsSuperAdmin(caller.Role) {
+		if caller.ChapterID == "" {
+			return apperrors.Forbidden("you are not associated with a chapter")
+		}
+		chapterID = &caller.ChapterID
+	}
+	if err := h.svc.RemoveFromWhitelist(c.Context(), c.Params("id"), chapterID); err != nil {
 		return err
 	}
 	return c.SendStatus(fiber.StatusNoContent)

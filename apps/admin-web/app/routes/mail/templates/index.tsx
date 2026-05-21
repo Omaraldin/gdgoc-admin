@@ -25,7 +25,7 @@ export default function MailTemplatesPage() {
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
   const isOwner = (t: MailTemplate) =>
-    isSuperAdminRole(user.role) || user.chapter_id === t.chapter_id;
+    isSuperAdminRole(user.role) || user.id === t.created_by;
 
   const togglePublish = async (t: MailTemplate) => {
     setLoadingId(t.id);
@@ -92,7 +92,9 @@ export default function MailTemplatesPage() {
                       ))}
                     </div>
                   )}
-                  <p className="text-xs text-muted-foreground mt-2">{formatDate(t.created_at)}</p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {t.created_by_name ? `By ${t.created_by_name} · ` : ""}{formatDate(t.created_at)}
+                  </p>
                 </div>
                 <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
                   {isOwner(t) ? (
@@ -108,6 +110,14 @@ export default function MailTemplatesPage() {
                       <Button asChild variant="outline" size="sm">
                         <Link to={`/mail/templates/${t.id}/edit`}>Edit</Link>
                       </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={loadingId === t.id + "-clone"}
+                        onClick={() => handleClone(t)}
+                      >
+                        {loadingId === t.id + "-clone" ? "Cloning…" : "Clone"}
+                      </Button>
                       <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-red-soft" onClick={() => setModal({ tmpl: t })}>
                         Delete
                       </Button>
@@ -119,7 +129,7 @@ export default function MailTemplatesPage() {
                       disabled={loadingId === t.id + "-clone"}
                       onClick={() => handleClone(t)}
                     >
-                      Clone
+                      {loadingId === t.id + "-clone" ? "Cloning…" : "Clone"}
                     </Button>
                   )}
                 </div>

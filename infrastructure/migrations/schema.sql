@@ -173,8 +173,13 @@ CREATE TABLE IF NOT EXISTS issuance_recipients (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_issuance_batches_chapter  ON issuance_batches(chapter_id);
-CREATE INDEX IF NOT EXISTS idx_issuance_batches_status   ON issuance_batches(status);
+-- cert_name: human-readable certification programme name shared across multiple batches.
+-- e.g. "Google Cloud Study Jam 2026" may have many issuance batches over time.
+ALTER TABLE issuance_batches ADD COLUMN IF NOT EXISTS cert_name TEXT NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_issuance_batches_chapter   ON issuance_batches(chapter_id);
+CREATE INDEX IF NOT EXISTS idx_issuance_batches_status    ON issuance_batches(status);
+CREATE INDEX IF NOT EXISTS idx_issuance_batches_cert_name ON issuance_batches(chapter_id, cert_name) WHERE cert_name <> '';
 CREATE INDEX IF NOT EXISTS idx_issuance_recipients_batch ON issuance_recipients(batch_id);
 CREATE INDEX IF NOT EXISTS idx_issuance_recipients_email ON issuance_recipients(email);
 

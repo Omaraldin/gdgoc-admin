@@ -14,16 +14,17 @@ import (
 
 // MailTemplate is a reusable HTML email template with dynamic variable slots.
 type MailTemplate struct {
-	ID        string    `json:"id"`
-	ChapterID string    `json:"chapter_id"`
-	Name      string    `json:"name"`
-	Subject   string    `json:"subject"`
-	Body      string    `json:"body"` // HTML from rich editor
-	Variables []string  `json:"variables"`
-	Status    string    `json:"status"` // "draft" | "published"
-	CreatedBy string    `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	ChapterID     string    `json:"chapter_id"`
+	Name          string    `json:"name"`
+	Subject       string    `json:"subject"`
+	Body          string    `json:"body"` // HTML from rich editor
+	Variables     []string  `json:"variables"`
+	Status        string    `json:"status"` // "draft" | "published"
+	CreatedBy     string    `json:"created_by"`
+	CreatedByName string    `json:"created_by_name"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // TemplateRepository handles persistence for MailTemplate records.
@@ -37,8 +38,11 @@ func NewTemplateRepository(db *database.DB) *TemplateRepository {
 
 func (r *TemplateRepository) List(ctx context.Context, chapterID string) ([]*MailTemplate, error) {
 	rows, err := r.db.WithContext(ctx).Raw(
-		`SELECT id, chapter_id, name, subject, body, variables, status, created_by, created_at, updated_at
-		 FROM mail_templates WHERE chapter_id = ? ORDER BY created_at DESC`, chapterID,
+		`SELECT mt.id, mt.chapter_id, mt.name, mt.subject, mt.body, mt.variables, mt.status, mt.created_by, mt.created_at, mt.updated_at,
+		        COALESCE(u.name, '') AS created_by_name
+		 FROM mail_templates mt
+		 LEFT JOIN users u ON u.id = mt.created_by
+		 WHERE mt.chapter_id = ? ORDER BY mt.created_at DESC`, chapterID,
 	).Rows()
 	if err != nil {
 		return nil, err
@@ -50,7 +54,7 @@ func (r *TemplateRepository) List(ctx context.Context, chapterID string) ([]*Mai
 		var t MailTemplate
 		var varsJSON []byte
 		if err := rows.Scan(&t.ID, &t.ChapterID, &t.Name, &t.Subject, &t.Body, &varsJSON,
-			&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &t.CreatedByName); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(varsJSON, &t.Variables); err != nil {
@@ -65,9 +69,12 @@ func (r *TemplateRepository) List(ctx context.Context, chapterID string) ([]*Mai
 // published templates from any other chapter for cross-chapter visibility.
 func (r *TemplateRepository) ListByChapterOrPublished(ctx context.Context, chapterID string) ([]*MailTemplate, error) {
 	rows, err := r.db.WithContext(ctx).Raw(
-		`SELECT id, chapter_id, name, subject, body, variables, status, created_by, created_at, updated_at
-		 FROM mail_templates WHERE chapter_id = ? OR status = 'published'
-		 ORDER BY (chapter_id = ?) DESC, created_at DESC`, chapterID, chapterID,
+		`SELECT mt.id, mt.chapter_id, mt.name, mt.subject, mt.body, mt.variables, mt.status, mt.created_by, mt.created_at, mt.updated_at,
+		        COALESCE(u.name, '') AS created_by_name
+		 FROM mail_templates mt
+		 LEFT JOIN users u ON u.id = mt.created_by
+		 WHERE mt.chapter_id = ? OR mt.status = 'published'
+		 ORDER BY (mt.chapter_id = ?) DESC, mt.created_at DESC`, chapterID, chapterID,
 	).Rows()
 	if err != nil {
 		return nil, err
@@ -79,7 +86,7 @@ func (r *TemplateRepository) ListByChapterOrPublished(ctx context.Context, chapt
 		var t MailTemplate
 		var varsJSON []byte
 		if err := rows.Scan(&t.ID, &t.ChapterID, &t.Name, &t.Subject, &t.Body, &varsJSON,
-			&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &t.CreatedByName); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(varsJSON, &t.Variables); err != nil {
@@ -92,8 +99,11 @@ func (r *TemplateRepository) ListByChapterOrPublished(ctx context.Context, chapt
 
 func (r *TemplateRepository) ListAll(ctx context.Context) ([]*MailTemplate, error) {
 	rows, err := r.db.WithContext(ctx).Raw(
-		`SELECT id, chapter_id, name, subject, body, variables, status, created_by, created_at, updated_at
-                 FROM mail_templates ORDER BY chapter_id, created_at DESC`,
+		`SELECT mt.id, mt.chapter_id, mt.name, mt.subject, mt.body, mt.variables, mt.status, mt.created_by, mt.created_at, mt.updated_at,
+		        COALESCE(u.name, '') AS created_by_name
+		 FROM mail_templates mt
+		 LEFT JOIN users u ON u.id = mt.created_by
+		 ORDER BY mt.chapter_id, mt.created_at DESC`,
 	).Rows()
 	if err != nil {
 		return nil, err
@@ -105,7 +115,7 @@ func (r *TemplateRepository) ListAll(ctx context.Context) ([]*MailTemplate, erro
 		var t MailTemplate
 		var varsJSON []byte
 		if err := rows.Scan(&t.ID, &t.ChapterID, &t.Name, &t.Subject, &t.Body, &varsJSON,
-			&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &t.CreatedByName); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(varsJSON, &t.Variables); err != nil {
@@ -120,10 +130,13 @@ func (r *TemplateRepository) Get(ctx context.Context, id, chapterID string) (*Ma
 	var t MailTemplate
 	var varsJSON []byte
 	err := r.db.WithContext(ctx).Raw(
-		`SELECT id, chapter_id, name, subject, body, variables, status, created_by, created_at, updated_at
-		 FROM mail_templates WHERE id = ? AND chapter_id = ?`, id, chapterID,
+		`SELECT mt.id, mt.chapter_id, mt.name, mt.subject, mt.body, mt.variables, mt.status, mt.created_by, mt.created_at, mt.updated_at,
+		        COALESCE(u.name, '') AS created_by_name
+		 FROM mail_templates mt
+		 LEFT JOIN users u ON u.id = mt.created_by
+		 WHERE mt.id = ? AND mt.chapter_id = ?`, id, chapterID,
 	).Row().Scan(&t.ID, &t.ChapterID, &t.Name, &t.Subject, &t.Body, &varsJSON,
-		&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt)
+		&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &t.CreatedByName)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, apperrors.NotFound("mail template not found")
@@ -141,10 +154,13 @@ func (r *TemplateRepository) GetAny(ctx context.Context, id string) (*MailTempla
 	var t MailTemplate
 	var varsJSON []byte
 	err := r.db.WithContext(ctx).Raw(
-		`SELECT id, chapter_id, name, subject, body, variables, status, created_by, created_at, updated_at
-		 FROM mail_templates WHERE id = ?`, id,
+		`SELECT mt.id, mt.chapter_id, mt.name, mt.subject, mt.body, mt.variables, mt.status, mt.created_by, mt.created_at, mt.updated_at,
+		        COALESCE(u.name, '') AS created_by_name
+		 FROM mail_templates mt
+		 LEFT JOIN users u ON u.id = mt.created_by
+		 WHERE mt.id = ?`, id,
 	).Row().Scan(&t.ID, &t.ChapterID, &t.Name, &t.Subject, &t.Body, &varsJSON,
-		&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt)
+		&t.Status, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt, &t.CreatedByName)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, apperrors.NotFound("mail template not found")
@@ -286,12 +302,19 @@ func (s *TemplateService) Create(ctx context.Context, in CreateTemplateInput, ch
 	return s.repo.Get(ctx, t.ID, chapterID)
 }
 
-func (s *TemplateService) Update(ctx context.Context, id string, in UpdateTemplateInput, chapterID string) (*MailTemplate, error) {
+func (s *TemplateService) Update(ctx context.Context, id string, in UpdateTemplateInput, chapterID, userID string, isSuperAdmin bool) (*MailTemplate, error) {
 	if in.Name == "" || in.Subject == "" || in.Body == "" {
 		return nil, apperrors.BadRequest("name, subject and body are required")
 	}
 	if in.Variables == nil {
 		in.Variables = []string{}
+	}
+	existing, err := s.repo.GetAny(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !isSuperAdmin && existing.CreatedBy != userID {
+		return nil, apperrors.Forbidden("only the author can edit this template")
 	}
 	t := &MailTemplate{
 		ID:        id,
@@ -307,18 +330,39 @@ func (s *TemplateService) Update(ctx context.Context, id string, in UpdateTempla
 	return s.repo.Get(ctx, id, chapterID)
 }
 
-func (s *TemplateService) Delete(ctx context.Context, id, chapterID string) error {
+func (s *TemplateService) Delete(ctx context.Context, id, chapterID, userID string, isSuperAdmin bool) error {
+	existing, err := s.repo.GetAny(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !isSuperAdmin && existing.CreatedBy != userID {
+		return apperrors.Forbidden("only the author can delete this template")
+	}
 	return s.repo.Delete(ctx, id, chapterID)
 }
 
-func (s *TemplateService) Publish(ctx context.Context, id, chapterID string) (*MailTemplate, error) {
+func (s *TemplateService) Publish(ctx context.Context, id, chapterID, userID string, isSuperAdmin bool) (*MailTemplate, error) {
+	existing, err := s.repo.GetAny(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !isSuperAdmin && existing.CreatedBy != userID {
+		return nil, apperrors.Forbidden("only the author can publish this template")
+	}
 	if err := s.repo.Publish(ctx, id, chapterID); err != nil {
 		return nil, err
 	}
 	return s.repo.Get(ctx, id, chapterID)
 }
 
-func (s *TemplateService) Unpublish(ctx context.Context, id, chapterID string) (*MailTemplate, error) {
+func (s *TemplateService) Unpublish(ctx context.Context, id, chapterID, userID string, isSuperAdmin bool) (*MailTemplate, error) {
+	existing, err := s.repo.GetAny(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !isSuperAdmin && existing.CreatedBy != userID {
+		return nil, apperrors.Forbidden("only the author can unpublish this template")
+	}
 	if err := s.repo.Unpublish(ctx, id, chapterID); err != nil {
 		return nil, err
 	}

@@ -16,6 +16,7 @@ type DynamicImage struct {
 	Status         string          `json:"status"` // "draft" | "published"
 	OwnerUserID    string          `json:"owner_user_id"`
 	OwnerChapterID string          `json:"owner_chapter_id"`
+	CreatedByName  string          `json:"created_by_name"`
 	Scene          json.RawMessage `json:"scene"` // tmpl.SceneDefinition serialised
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`

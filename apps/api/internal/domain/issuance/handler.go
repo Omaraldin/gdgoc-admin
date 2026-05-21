@@ -129,6 +129,96 @@ func (h *Handler) DeleteBatch(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *Handler) ListCertNames(c *fiber.Ctx) error {
+	names, err := h.svc.ListCertNames(c.Context(), caller(c))
+	if err != nil {
+		return err
+	}
+	return c.JSON(names)
+}
+
+func (h *Handler) ListCertMetadata(c *fiber.Ctx) error {
+	items, err := h.svc.ListCertMetadata(c.Context(), caller(c))
+	if err != nil {
+		return err
+	}
+	return c.JSON(items)
+}
+
+func (h *Handler) CreateCertMetadata(c *fiber.Ctx) error {
+	var input CreateCertMetadataInput
+	if err := c.BodyParser(&input); err != nil {
+		return apperrors.BadRequest("invalid request body")
+	}
+	cm, err := h.svc.CreateCertMetadata(c.Context(), input, caller(c))
+	if err != nil {
+		return err
+	}
+	return c.Status(fiber.StatusCreated).JSON(cm)
+}
+
+func (h *Handler) UpdateCertMetadata(c *fiber.Ctx) error {
+	var input UpdateCertMetadataInput
+	if err := c.BodyParser(&input); err != nil {
+		return apperrors.BadRequest("invalid request body")
+	}
+	cm, err := h.svc.UpdateCertMetadata(c.Context(), c.Params("id"), input, caller(c))
+	if err != nil {
+		return err
+	}
+	return c.JSON(cm)
+}
+
+func (h *Handler) DeleteCertMetadata(c *fiber.Ctx) error {
+	if err := h.svc.DeleteCertMetadata(c.Context(), c.Params("id"), caller(c)); err != nil {
+		return err
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// CertificationGroup groups batches under one cert_name for the Certifications page.
+type CertificationGroup struct {
+	CertID      *string          `json:"cert_id,omitempty"`
+	CertName    string           `json:"cert_name"`
+	Description string           `json:"description,omitempty"`
+	Batches     []*IssuanceBatch `json:"batches"`
+}
+
+func (h *Handler) ListCertifications(c *fiber.Ctx) error {
+	var batches []*IssuanceBatch
+	var err error
+	user := caller(c)
+	batches, err = h.svc.ListBatches(c.Context(), user)
+	if err != nil {
+		return err
+	}
+
+	// Group by cert_name; batches without cert_name go into "Uncategorized".
+	order := []string{}
+	groups := map[string]*CertificationGroup{}
+	for _, b := range batches {
+		key := b.CertName
+		if key == "" {
+			key = "Uncategorized"
+		}
+		if _, ok := groups[key]; !ok {
+			g := &CertificationGroup{CertName: key}
+			if b.CertID != nil {
+				g.CertID = b.CertID
+				g.Description = b.CertDescription
+			}
+			groups[key] = g
+			order = append(order, key)
+		}
+		groups[key].Batches = append(groups[key].Batches, b)
+	}
+	result := make([]*CertificationGroup, 0, len(order))
+	for _, k := range order {
+		result = append(result, groups[k])
+	}
+	return c.JSON(result)
+}
+
 func sanitizeFilename(s string) string {
 	out := make([]byte, 0, len(s))
 	for i := 0; i < len(s); i++ {

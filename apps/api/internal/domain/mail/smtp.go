@@ -299,8 +299,8 @@ type inlineImage struct {
 	data        []byte
 }
 
-// imgSrcRe matches src="http(s)://..." attributes inside <img> tags.
-var imgSrcRe = regexp.MustCompile(`(?i)src="(https?://[^"]+)"`)
+// imgSrcRe matches src="http(s)://..." or src='http(s)://...' attributes inside <img> tags.
+var imgSrcRe = regexp.MustCompile(`(?i)src\s*=\s*("https?://[^"]+"|'https?://[^']+')`)
 
 // imgTagRe matches <img ...> and <img ... /> tags.
 var imgTagRe = regexp.MustCompile(`(?i)<img\b([^>]*?)(\s*/?>)`)
@@ -339,10 +339,10 @@ func fetchAndEmbedImages(htmlBody string) (string, []inlineImage) {
 		if len(m) < 2 {
 			continue
 		}
-		u := m[1]
-		if _, seen := urlMap[u]; !seen {
+		srcURL := strings.Trim(m[1], `"'`)
+		if _, seen := urlMap[srcURL]; !seen {
 			counter++
-			urlMap[u] = &result{cid: fmt.Sprintf("img%04d@mail.local", counter)}
+			urlMap[srcURL] = &result{cid: fmt.Sprintf("img%04d@mail.local", counter)}
 		}
 	}
 	if len(urlMap) == 0 {
@@ -376,8 +376,10 @@ func fetchAndEmbedImages(htmlBody string) (string, []inlineImage) {
 		if len(sub) < 2 {
 			return match
 		}
-		if res, ok := urlMap[sub[1]]; ok && res.ok {
-			return `src="cid:` + res.cid + `"`
+		srcURL := strings.Trim(sub[1], `"'`)
+		if res, ok := urlMap[srcURL]; ok && res.ok {
+			quote := sub[1][:1]
+			return `src=` + quote + `cid:` + res.cid + quote
 		}
 		return match
 	})
@@ -447,17 +449,25 @@ func buildHTMLMIMEMessage(from, to, subject, htmlBody, chapterName string) []byt
 	buf.WriteString(fmt.Sprintf("Content-Type: multipart/related; type=\"text/html\"; boundary=\"%s\"\r\n\r\n", boundary))
 
 	// HTML part
-	buf.WriteString("--" + boundary + "\r\n")
+	buf.WriteString("--")
+	buf.WriteString(boundary)
+	buf.WriteString("\r\n")
 	buf.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
 	buf.WriteString(embedded)
 	buf.WriteString("\r\n")
 
 	// Inline image parts
 	for _, img := range images {
-		buf.WriteString("--" + boundary + "\r\n")
-		buf.WriteString("Content-Type: " + img.contentType + "\r\n")
+		buf.WriteString("--")
+		buf.WriteString(boundary)
+		buf.WriteString("\r\n")
+		buf.WriteString("Content-Type: ")
+		buf.WriteString(img.contentType)
+		buf.WriteString("\r\n")
 		buf.WriteString("Content-Transfer-Encoding: base64\r\n")
-		buf.WriteString("Content-ID: <" + img.cid + ">\r\n")
+		buf.WriteString("Content-ID: <")
+		buf.WriteString(img.cid)
+		buf.WriteString(">\r\n")
 		buf.WriteString("Content-Disposition: inline\r\n\r\n")
 		enc := base64.StdEncoding.EncodeToString(img.data)
 		for i := 0; i < len(enc); i += 76 {
@@ -465,10 +475,13 @@ func buildHTMLMIMEMessage(from, to, subject, htmlBody, chapterName string) []byt
 			if end > len(enc) {
 				end = len(enc)
 			}
-			buf.WriteString(enc[i:end] + "\r\n")
+			buf.WriteString(enc[i:end])
+			buf.WriteString("\r\n")
 		}
 	}
-	buf.WriteString("--" + boundary + "--\r\n")
+	buf.WriteString("--")
+	buf.WriteString(boundary)
+	buf.WriteString("--\r\n")
 	return buf.Bytes()
 }
 
@@ -486,6 +499,9 @@ func smtpSend(host string, port int, auth smtp.Auth, from, to, subject, body str
 			from, to, subject, body,
 		))
 	}
+
+	fmt.Printf("SendMail: to=%s subject=%q isHTML=%t\n", to, subject, isHTML)
+	fmt.Printf("Email body before sending:\n%s\n", body)
 
 	var c *smtp.Client
 	var err error
