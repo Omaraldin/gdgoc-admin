@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import type { Template } from "~/lib/types";
+import { TemplatePreview } from "~/components/TemplatePreview";
 
 export function meta() {
   return [{ title: "Public Templates | GDGoC Admin" }];
@@ -54,15 +55,13 @@ export default function PublicTemplatesPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {templates.map((t) => (
-            <Card key={t.id}>
-              <CardContent className="p-5">
+            <Card key={t.id} className="overflow-hidden flex flex-col">
+              <TemplatePreview templateId={t.id} versionId={t.current_version_id} />
+              <CardContent className="p-4 flex flex-col flex-1">
                 <h2 className="font-semibold mb-1 truncate text-sm">{t.name}</h2>
-                <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{t.description}</p>
-                <div className="flex gap-2">
-                  <Button asChild variant="ghost" size="sm">
-                    <Link to={`/templates/${t.id}`}>Preview</Link>
-                  </Button>
-                  <Button variant="ghost" size="sm" className="text-primary" onClick={() => handleCloneClick(t)}>
+                <p className="text-sm text-muted-foreground mb-4 line-clamp-2 flex-1">{t.description}</p>
+                <div className="flex gap-2 mt-auto">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => handleCloneClick(t)}>
                     Clone &amp; Edit
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => exportTemplate(t.id, t.name)}>

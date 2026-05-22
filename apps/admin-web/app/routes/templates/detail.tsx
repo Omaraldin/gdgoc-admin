@@ -12,6 +12,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { isSuperAdminRole } from "~/lib/roles";
 import type { User } from "~/lib/types";
+import { TemplatePreview } from "~/components/TemplatePreview";
 
 export function meta() {
   return [{ title: "Template | GDGoC Admin" }];
@@ -117,7 +118,8 @@ export default function TemplateDetailPage() {
         </div>
       </div>
 
-      <Card className="mb-6">
+      <Card className="mb-6 overflow-hidden">
+        <TemplatePreview templateId={template.id} versionId={template.current_version_id} />
         <CardContent className="p-6 space-y-4">
           <div className="flex gap-2">
             <TemplateBadge value={template.status} />
