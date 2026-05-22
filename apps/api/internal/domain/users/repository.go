@@ -125,6 +125,7 @@ func (r *Repository) ListWhitelist(ctx context.Context, chapterID *string) ([]*W
 }
 
 func (r *Repository) AddToWhitelist(ctx context.Context, email, role, addedBy string, chapterID *string) (*WhitelistEntry, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
 	var chapterArg interface{}
 	if chapterID != nil {
 		chapterArg = *chapterID

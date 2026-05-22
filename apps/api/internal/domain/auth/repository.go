@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/gdgoc/admin-api/internal/database"
 	"gorm.io/gorm"
@@ -26,24 +27,44 @@ func NewRepository(db *database.DB) *Repository {
 
 func (r *Repository) IsWhitelisted(ctx context.Context, email string) (bool, error) {
 	var count int64
+	email = strings.ToLower(strings.TrimSpace(email))
 	err := r.db.WithContext(ctx).Raw(
-		`SELECT COUNT(*) FROM whitelist WHERE email = ? AND deleted_at IS NULL`, email,
+		`SELECT COUNT(*) FROM whitelist WHERE LOWER(email) = ? AND deleted_at IS NULL`, email,
 	).Scan(&count).Error
 	return count > 0, err
 }
 
 func (r *Repository) UpsertUser(ctx context.Context, identity *KayanIdentity) (*UserRecord, error) {
 	var u UserRecord
-	err := r.db.WithContext(ctx).Raw(`
-		INSERT INTO users (kayan_id, email, name, role, created_at, updated_at)
-		VALUES (?, ?, ?,
-			COALESCE((SELECT role FROM whitelist WHERE email = ? AND deleted_at IS NULL LIMIT 1), 'chapter_leader'),
-			NOW(), NOW())
-		ON CONFLICT (kayan_id) DO UPDATE
-			SET email = EXCLUDED.email, name = EXCLUDED.name, updated_at = NOW()
-		RETURNING id, email, name, role, COALESCE(chapter_id::text, '')
-	`, identity.KayanID, identity.Email, identity.Name, identity.Email,
-	).Scan(&u).Error
+	email := strings.ToLower(strings.TrimSpace(identity.Email))
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Raw(`
+			INSERT INTO users (kayan_id, email, name, role, chapter_id, created_at, updated_at)
+			VALUES (?, ?, ?,
+				COALESCE((SELECT role FROM whitelist WHERE LOWER(email) = ? AND deleted_at IS NULL LIMIT 1), 'chapter_leader'),
+				(SELECT chapter_id FROM whitelist WHERE LOWER(email) = ? AND deleted_at IS NULL LIMIT 1),
+				NOW(), NOW())
+			ON CONFLICT (kayan_id) DO UPDATE
+				SET email = EXCLUDED.email, name = EXCLUDED.name, updated_at = NOW()
+			RETURNING id, email, name, role, COALESCE(chapter_id::text, '')
+		`, identity.KayanID, email, identity.Name, email, email,
+		).Scan(&u).Error; err != nil {
+			return err
+		}
+
+		if u.Role == "chapter_leader" && u.ChapterID != "" {
+			if err := tx.Exec(`
+				UPDATE chapters 
+				SET leader_id = ?::uuid, updated_at = NOW() 
+				WHERE id = ?::uuid AND leader_id IS NULL
+			`, u.ID, u.ChapterID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
 	return &u, err
 }
 
@@ -101,6 +122,7 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*UserRec
 }
 
 func (r *Repository) AddToWhitelist(ctx context.Context, email, addedByUserID string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
 	return r.db.WithContext(ctx).Exec(`
 		INSERT INTO whitelist (email, added_by, created_at)
 		VALUES (?, ?, NOW())

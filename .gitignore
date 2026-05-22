@@ -35,3 +35,5 @@ Thumbs.db
 
 # Generated
 apps/admin-web/src/lib/api/generated/
+
+push.ps1
