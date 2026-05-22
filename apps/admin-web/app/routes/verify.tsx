@@ -37,10 +37,10 @@ export function meta({ loaderData }: Route.MetaArgs): Route.MetaDescriptors {
   const isValid = Boolean(result?.valid);
   const certName = result?.cert_name ?? result?.batch_name ?? result?.template_name ?? "a certificate";
   const title = isValid
-    ? `${result?.recipient_name ?? "Recipient"} earned ${certName}`
+    ? `${result?.recipient_name ?? "Recipient"} earned ${certName} certification`
     : "Verify Certificate | GDGoC Admin";
   const description = isValid
-    ? `Verified certificate issued by ${result?.chapter_name ?? "GDGoC"}.`
+    ? `Verified certificate issued by GDG on Campus: ${result?.chapter_name ?? "GDGoC"}.`
     : "Verify whether a GDGoC certificate is valid.";
   const shareUrl = getOgShareUrl(result);
   const imageUrl = result?.preview_image_url;
@@ -143,7 +143,7 @@ export default function VerifyPage() {
         <h1 className="text-xl font-semibold mb-2 text-foreground">
           {result.valid ? "Certificate Valid" : "Certificate Invalid"}
         </h1>
-        <p className="text-muted-foreground text-sm mb-6">Code: {result.code}</p>
+        <p className="text-muted-foreground text-sm mb-6 font-mono">ID: {result.code}</p>
 
         {result.valid && (
           <dl className="text-left space-y-3 border-t pt-4">
@@ -165,6 +165,7 @@ export default function VerifyPage() {
                 <dd className="font-medium text-sm">{result.chapter_name}</dd>
               </div>
             )}
+
             {result.issued_at && (
               <div>
                 <dt className="text-xs text-muted-foreground">Issued</dt>

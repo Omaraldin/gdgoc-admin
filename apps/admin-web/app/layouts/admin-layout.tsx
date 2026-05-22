@@ -119,6 +119,19 @@ export default function AdminLayout() {
 
       {/* Footer */}
       <div className="px-2 py-2 border-t border-[var(--border-c)]">
+        <p className="px-3 pb-2 text-[11px] text-muted-foreground text-center leading-relaxed">
+          Made with{" "}
+          <span className="text-red-500" aria-label="love">❤</span>
+          {" "}by{" "}
+          <a
+            href="https://linkedin.com/in/omaraldin"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground hover:text-primary transition-colors underline underline-offset-2 decoration-dotted"
+          >
+            Omar El. Khashab
+          </a>
+        </p>
         <Form action="/auth/logout" method="post">
           <button
             type="submit"
