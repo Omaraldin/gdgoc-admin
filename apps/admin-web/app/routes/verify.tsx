@@ -17,11 +17,6 @@ function getOgShareUrl(result?: VerificationResult): string | undefined {
   return result.share_url ?? `${FRONTEND_BASE_URL}/verify/${encodeURIComponent(result.code)}`;
 }
 
-function getFrontendVerifyUrl(): string {
-  if (typeof window !== "undefined") return window.location.href;
-  return "";
-}
-
 export function meta({ loaderData }: Route.MetaArgs): Route.MetaDescriptors {
   const result = loaderData as VerificationResult | undefined;
   const isValid = Boolean(result?.valid);
@@ -51,26 +46,26 @@ export function meta({ loaderData }: Route.MetaArgs): Route.MetaDescriptors {
   }
   if (imageUrl) {
     tags.push({ property: "og:image", content: imageUrl });
-    tags.push({ property: "og:image:type", content:   "image/png" });
+    tags.push({ property: "og:image:type", content: "image/png" });
     tags.push({ name: "twitter:image", content: imageUrl });
   }
 
   return tags;
 }
 
-export async function clientLoader({ params }: Route.ClientLoaderArgs): Promise<VerificationResult> {
+export async function loader({ params }: Route.LoaderArgs): Promise<VerificationResult> {
   return verifyCertificate(params.code);
 }
 
 export default function VerifyPage() {
-  const result = useLoaderData<typeof clientLoader>();
+  const result = useLoaderData<typeof loader>();
   const [copiedText, setCopiedText] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   // ogShareUrl  → API endpoint (/api/v1/verify/:code/share) — serves OG HTML for LinkedIn crawler
   // verifyUrl   → actual frontend page URL — used for copy link & native share
   const ogShareUrl = getOgShareUrl(result) ?? "";
-  const verifyUrl = getFrontendVerifyUrl();
+  const verifyUrl = `${FRONTEND_BASE_URL}/verify/${encodeURIComponent(result.code)}`;
   const pdfUrl = `${API_BASE_URL}/certificates/${encodeURIComponent(result.code)}/render?format=pdf`;
   const certName = result.cert_name ?? result.batch_name ?? result.template_name ?? "a certificate";
   const shareText = result.valid
