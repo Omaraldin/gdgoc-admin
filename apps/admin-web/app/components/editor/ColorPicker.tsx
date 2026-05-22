@@ -119,7 +119,7 @@ export function ColorPicker({ value, onChange, variant = "swatch", className }: 
                     onClick={() => handleChip(c)}
                     style={{ backgroundColor: c }}
                     className={`w-9 h-9 rounded-lg border-2 transition-transform hover:scale-110 focus:outline-none ${
-                      value.toLowerCase() === c.toLowerCase()
+                      (value || "").toLowerCase() === c.toLowerCase()
                         ? "border-blue-500 scale-105"
                         : "border-transparent"
                     }`}
@@ -136,19 +136,19 @@ export function ColorPicker({ value, onChange, variant = "swatch", className }: 
           <div className="flex items-center gap-2">
             <div
               className="w-7 h-7 rounded-md border border-black/20 shrink-0"
-              style={{ backgroundColor: value }}
+              style={{ backgroundColor: value || "transparent" }}
             />
             <button
               type="button"
               className="flex-1 text-left text-xs text-text-2 hover:text-text-1 font-mono uppercase tracking-wide"
               onClick={() => nativeRef.current?.click()}
             >
-              {value}
+              {value || "None"}
             </button>
             <input
               ref={nativeRef}
               type="color"
-              value={value}
+              value={value || "#000000"}
               onChange={(e) => onChange(e.target.value)}
               className="sr-only"
             />
@@ -172,9 +172,9 @@ export function ColorPicker({ value, onChange, variant = "swatch", className }: 
         ref={anchorRef}
         type="button"
         className={triggerClass}
-        style={{ backgroundColor: value }}
+        style={{ backgroundColor: value || "transparent" }}
         onClick={openPopover}
-        title={`Color: ${value}`}
+        title={`Color: ${value || "none"}`}
       >
         {variant === "swatch" && (
           // invisible overlay to show "swatch" style on the circle background

@@ -167,10 +167,15 @@ type PathProps struct {
 
 // ShapeProps holds vector / shape rendering properties.
 type ShapeProps struct {
-	Kind             string     `json:"kind"` // "path" (and legacy: rect|circle|line)
-	PathProps        *PathProps `json:"path_props,omitempty"`
-	Fill             *ShapeFill `json:"fill,omitempty"`
-	StrokeColor      string     `json:"stroke_color,omitempty"`
+	Kind             string         `json:"kind"` // "path" (and legacy: rect|circle|line)
+	PathProps        *PathProps     `json:"path_props,omitempty"`
+	Fill             *ShapeFill     `json:"fill,omitempty"`
+	FillType         string         `json:"fill_type,omitempty"`
+	FillColor        string         `json:"fill_color,omitempty"`
+	GradientType     string         `json:"gradient_type,omitempty"`
+	GradientAngle    float64        `json:"gradient_angle,omitempty"`
+	GradientStops    []GradientStop `json:"gradient_stops,omitempty"`
+	StrokeColor      string         `json:"stroke_color,omitempty"`
 	StrokeWidth      float64    `json:"stroke_width,omitempty"`
 	StrokeAlignment  string     `json:"stroke_alignment,omitempty"` // center|inside|outside
 	StrokeLineCap    string     `json:"stroke_linecap,omitempty"`   // butt|round|square

@@ -1,12 +1,13 @@
 import { useLoaderData, Link, useRevalidator } from "react-router";
-import { useRef, useState } from "react";
+import { useRef, useState, lazy, Suspense } from "react";
+import { ClientOnly } from "~/components/ClientOnly";
 import { listTemplates, exportTemplate, importTemplate } from "~/lib/api/templates";
 import { formatDate } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
 import type { Template } from "~/lib/types";
-import { TemplatePreview } from "~/components/TemplatePreview";
+const TemplatePreview = lazy(() => import("~/components/TemplatePreview").then(m => ({ default: m.TemplatePreview })));
 
 export function meta() {
   return [{ title: "Templates | GDGoC Admin" }];
@@ -63,7 +64,13 @@ export default function TemplatesPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {templates.map((t) => (
             <Card key={t.id} className="hover:shadow-md transition-shadow flex flex-col overflow-hidden">
-              <TemplatePreview templateId={t.id} versionId={t.current_version_id} />
+              <ClientOnly fallback={<div className="w-full aspect-video bg-muted animate-pulse" />}>
+                {() => (
+                  <Suspense fallback={<div className="w-full aspect-video bg-muted animate-pulse" />}>
+                    <TemplatePreview templateId={t.id} versionId={t.current_version_id} />
+                  </Suspense>
+                )}
+              </ClientOnly>
               <CardContent className="p-4 flex flex-col flex-1">
                 <div className="flex items-start justify-between mb-3">
                   <h2 className="font-semibold truncate text-foreground">{t.name}</h2>

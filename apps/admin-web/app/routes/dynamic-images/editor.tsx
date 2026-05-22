@@ -1,14 +1,15 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, lazy, Suspense } from "react";
+import { ClientOnly } from "~/components/ClientOnly";
 import { useLoaderData, useNavigate } from "react-router";
 import type { Route } from "./+types/editor";
 import { getDynamicImage, updateDynamicImage } from "~/lib/api/dynamic-images";
 import { uploadTemplateAsset } from "~/lib/api/templates";
 import { apiClient } from "~/lib/api/client";
-import { CertificateEditor } from "~/components/editor/CertificateEditor";
+const CertificateEditor = lazy(() => import("~/components/editor/CertificateEditor").then(m => ({ default: m.CertificateEditor })));
 import type { SceneDefinition } from "~/lib/types";
 
 export function meta() {
-  return [{ title: "Dynamic Image Editor | GDGoC Admin" }];
+    return [{ title: "Dynamic Image Editor | GDGoC Admin" }];
 }
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
@@ -199,15 +200,21 @@ export default function DynamicImageEditorPage() {
                 </div>
             </header>
 
-            <div className="flex-1 overflow-hidden">
-                <CertificateEditor
-                    scene={scene}
-                    onChange={setScene}
-                    assetBaseUrl={assetBaseUrl}
-                    getImageUrl={getImageUrl}
-                    onAddImageFile={handleAddImageFile}
-                    onImageReady={handleImageReady}
-                />
+            <div className="flex-1 overflow-hidden flex flex-col">
+                <ClientOnly fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground">Loading editor...</div>}>
+                    {() => (
+                        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground">Loading editor...</div>}>
+                            <CertificateEditor
+                                scene={scene}
+                                onChange={setScene}
+                                assetBaseUrl={assetBaseUrl}
+                                getImageUrl={getImageUrl}
+                                onAddImageFile={handleAddImageFile}
+                                onImageReady={handleImageReady}
+                            />
+                        </Suspense>
+                    )}
+                </ClientOnly>
             </div>
         </div>
     );

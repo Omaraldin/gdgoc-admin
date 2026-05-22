@@ -1,5 +1,6 @@
 import { useLoaderData, Link, useNavigate, useOutletContext } from "react-router";
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
+import { ClientOnly } from "~/components/ClientOnly";
 import type { Route } from "./+types/detail";
 import { getTemplate, publishTemplate, archiveTemplate, deleteTemplate, cloneTemplate } from "~/lib/api/templates";
 import { formatDate } from "~/lib/utils";
@@ -12,7 +13,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { isSuperAdminRole } from "~/lib/roles";
 import type { User } from "~/lib/types";
-import { TemplatePreview } from "~/components/TemplatePreview";
+const TemplatePreview = lazy(() => import("~/components/TemplatePreview").then(m => ({ default: m.TemplatePreview })));
 
 export function meta() {
   return [{ title: "Template | GDGoC Admin" }];
@@ -119,7 +120,13 @@ export default function TemplateDetailPage() {
       </div>
 
       <Card className="mb-6 overflow-hidden">
-        <TemplatePreview templateId={template.id} versionId={template.current_version_id} />
+        <ClientOnly fallback={<div className="w-full aspect-video bg-muted animate-pulse" />}>
+          {() => (
+            <Suspense fallback={<div className="w-full aspect-video bg-muted animate-pulse" />}>
+              <TemplatePreview templateId={template.id} versionId={template.current_version_id} />
+            </Suspense>
+          )}
+        </ClientOnly>
         <CardContent className="p-6 space-y-4">
           <div className="flex gap-2">
             <TemplateBadge value={template.status} />

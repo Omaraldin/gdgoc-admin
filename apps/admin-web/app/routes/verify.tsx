@@ -8,12 +8,13 @@ import { formatDate } from "~/lib/utils";
 import { cn } from "~/lib/utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api/v1";
+const FRONTEND_BASE_URL = import.meta.env.VITE_FRONTEND_URL ?? "http://localhost:5174";
 
 // The OG share URL is on the API so LinkedIn's crawler gets real meta tags + a redirect.
 // The verify page itself lives on the frontend — use window.location.href when available.
 function getOgShareUrl(result?: VerificationResult): string | undefined {
   if (!result?.code) return undefined;
-  return result.share_url ?? `${API_BASE_URL}/verify/${encodeURIComponent(result.code)}/share`;
+  return result.share_url ?? `${FRONTEND_BASE_URL}/verify/${encodeURIComponent(result.code)}`;
 }
 
 function getFrontendVerifyUrl(): string {
@@ -50,6 +51,7 @@ export function meta({ loaderData }: Route.MetaArgs): Route.MetaDescriptors {
   }
   if (imageUrl) {
     tags.push({ property: "og:image", content: imageUrl });
+    tags.push({ property: "og:image:type", content:   "image/png" });
     tags.push({ name: "twitter:image", content: imageUrl });
   }
 

@@ -249,18 +249,19 @@ function buildFillProps(
   w: number,
   h: number,
 ): Record<string, unknown> {
-  if (sp.fill_type === "none") {
+  const fillType = sp.fill_type ?? "none";
+  if (fillType === "none") {
     return { fillEnabled: false };
   }
-  if (sp.fill_type === "solid") {
-    return { fill: sp.fill_color };
+  if (fillType === "solid") {
+    return { fill: sp.fill_color ?? "transparent" };
   }
   // Gradient — Konva expects flat array [offset, color, offset, color, ...].
-  const stops = sp.gradient_stops.flatMap(
+  const stops = (sp.gradient_stops || []).flatMap(
     (s: GradientStop): (number | string)[] => [s.offset, s.color],
   );
   if (sp.gradient_type === "linear") {
-    const rad = (sp.gradient_angle * Math.PI) / 180;
+    const rad = ((sp.gradient_angle ?? 90) * Math.PI) / 180;
     const dx = Math.cos(rad);
     const dy = Math.sin(rad);
     const cx = w / 2;

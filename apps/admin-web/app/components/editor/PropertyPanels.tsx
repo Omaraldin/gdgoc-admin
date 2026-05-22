@@ -414,16 +414,17 @@ export function ShapePropsPanel({ props, onUpdate }: {
     onUpdate({ ...props, [key]: value });
 
   const updateStop = (i: number, patch: Partial<GradientStop>) =>
-    set("gradient_stops", props.gradient_stops.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+    set("gradient_stops", (props.gradient_stops || []).map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
 
   const addStop = () => {
-    const stops = [...props.gradient_stops, { offset: 1, color: "#ffffff" }].sort((a, b) => a.offset - b.offset);
+    const stops = [...(props.gradient_stops || []), { offset: 1, color: "#ffffff" }].sort((a, b) => a.offset - b.offset);
     set("gradient_stops", stops);
   };
 
   const removeStop = (i: number) => {
-    if (props.gradient_stops.length <= 2) return;
-    set("gradient_stops", props.gradient_stops.filter((_, idx) => idx !== i));
+    const stops = props.gradient_stops || [];
+    if (stops.length <= 2) return;
+    set("gradient_stops", stops.filter((_, idx) => idx !== i));
   };
 
   return (
@@ -490,12 +491,12 @@ export function ShapePropsPanel({ props, onUpdate }: {
                   <button type="button" onClick={addStop} className="text-g-blue hover:underline text-xs">+ Add</button>
                 </div>
                 <div className="space-y-1">
-                  {props.gradient_stops.map((stop, i) => (
+                  {(props.gradient_stops || []).map((stop, i) => (
                     <div key={i} className="flex items-center gap-1">
                       <ColorPicker value={stop.color} onChange={(v) => updateStop(i, { color: v })} />
                       <input type="range" min={0} max={1} step={0.01} value={stop.offset} className="flex-1" onChange={(e) => updateStop(i, { offset: Number(e.target.value) })} />
                       <span className="text-xs text-text-3 w-8 text-right shrink-0">{Math.round(stop.offset * 100)}%</span>
-                      <button type="button" onClick={() => removeStop(i)} disabled={props.gradient_stops.length <= 2}
+                      <button type="button" onClick={() => removeStop(i)} disabled={(props.gradient_stops || []).length <= 2}
                         className="text-red-400 hover:text-red-600 disabled:opacity-30 shrink-0"><X size={12} /></button>
                     </div>
                   ))}

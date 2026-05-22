@@ -298,5 +298,9 @@ func (s *Service) canWrite(tmpl *Template, caller *auth.SessionUser) bool {
 	if auth.IsSuperAdmin(caller.Role) {
 		return true
 	}
+	// Allow any member of the same chapter to edit the chapter's templates
+	if tmpl.OwnerChapterID != "" && tmpl.OwnerChapterID == caller.ChapterID {
+		return true
+	}
 	return tmpl.OwnerUserID == caller.ID
 }

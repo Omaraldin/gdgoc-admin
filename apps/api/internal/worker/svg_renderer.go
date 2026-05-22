@@ -298,7 +298,7 @@ func (r *SVGRenderer) renderShape(buf *bytes.Buffer, layer tmpl.Layer) {
 		transform = fmt.Sprintf(`translate(%.3f %.3f)`, layer.X-layer.Width/2, layer.Y-layer.Height/2)
 	}
 
-	fillAttr := buildFillAttr(r, sp.Fill, layer.Width, layer.Height)
+	fillAttr := buildFillAttr(r, sp, layer.Width, layer.Height)
 	fillRule := fillRuleOrDefault(sp)
 	opacity := 1.0
 	if sp.Opacity > 0 && sp.Opacity <= 1 {
@@ -453,10 +453,53 @@ func ellipsePathD(w, h float64) string {
 	)
 }
 
-// buildFillAttr returns a value usable as the fill="..." attribute. For
-// gradients, registers a <linearGradient>/<radialGradient> in defs and returns
-// "url(#id)". Returns "none" if no fill.
-func buildFillAttr(r *SVGRenderer, f *tmpl.ShapeFill, w, h float64) string {
+func buildFillAttr(r *SVGRenderer, sp *tmpl.ShapeProps, w, h float64) string {
+	fillType := sp.FillType
+	if fillType == "solid" {
+		if sp.FillColor == "" || sp.FillColor == "none" || sp.FillColor == "transparent" {
+			return "none"
+		}
+		return escapeAttr(r.color(sp.FillColor))
+	} else if fillType == "gradient" {
+		if len(sp.GradientStops) == 0 {
+			return "none"
+		}
+		if sp.GradientType == "linear" {
+			id := r.nextDefID("lg")
+			rad := sp.GradientAngle * math.Pi / 180.0
+			dx := math.Cos(rad)
+			dy := math.Sin(rad)
+			x1 := 0.5 - dx*0.5
+			y1 := 0.5 - dy*0.5
+			x2 := 0.5 + dx*0.5
+			y2 := 0.5 + dy*0.5
+			fmt.Fprintf(&r.defs,
+				`<linearGradient id="%s" x1="%.3f" y1="%.3f" x2="%.3f" y2="%.3f">`,
+				id, x1, y1, x2, y2,
+			)
+			for _, s := range sp.GradientStops {
+				fmt.Fprintf(&r.defs, `<stop offset="%.3f" stop-color="%s"/>`, s.Offset, escapeAttr(r.color(s.Color)))
+			}
+			r.defs.WriteString(`</linearGradient>`)
+			return fmt.Sprintf("url(#%s)", id)
+		} else {
+			id := r.nextDefID("rg")
+			fmt.Fprintf(&r.defs,
+				`<radialGradient id="%s" cx="0.500" cy="0.500" r="0.500" fx="0.500" fy="0.500">`,
+				id,
+			)
+			for _, s := range sp.GradientStops {
+				fmt.Fprintf(&r.defs, `<stop offset="%.3f" stop-color="%s"/>`, s.Offset, escapeAttr(r.color(s.Color)))
+			}
+			r.defs.WriteString(`</radialGradient>`)
+			return fmt.Sprintf("url(#%s)", id)
+		}
+	} else if fillType == "none" {
+		return "none"
+	}
+
+	// Fallback to legacy Fill object if present
+	f := sp.Fill
 	if f == nil {
 		return "none"
 	}
