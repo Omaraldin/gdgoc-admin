@@ -105,9 +105,9 @@ export async function listWhitelist(): Promise<WhitelistEntry[]> {
   return res.data;
 }
 
-export async function addToWhitelist(email: string, role: string): Promise<void> {
-  await apiClient.post("/whitelist", { email, role });
-}
+export const addToWhitelist = async (email: string, role: string, chapter_id?: string) => {
+  await apiClient.post("/whitelist", { email, role, chapter_id });
+};
 
 export async function removeFromWhitelist(id: string): Promise<void> {
   await apiClient.delete(`/whitelist/${id}`);

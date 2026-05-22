@@ -1,5 +1,5 @@
 import { useEditor, EditorContent } from "@tiptap/react";
-import type { Editor } from "@tiptap/core";
+import { mergeAttributes, type Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
@@ -176,7 +176,7 @@ function Divider() {
 // ── Variable chips for URL inputs ─────────────────────────────────────────────
 
 function insertVarAtCursor(
-  inputRef: React.RefObject<HTMLInputElement>,
+  inputRef: React.RefObject<HTMLInputElement | null>,
   current: string,
   variable: string,
   onChange: (v: string) => void,
@@ -203,7 +203,7 @@ function UrlVariableChips({
   onChange,
 }: {
   variables: string[];
-  inputRef: React.RefObject<HTMLInputElement>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
   url: string;
   onChange: (v: string) => void;
 }) {
@@ -482,12 +482,13 @@ function ImageUrlPopover({ onInsert, variables = [] }: { onInsert: (url: string)
 
 // ── Link popover ─────────────────────────────────────────────────────────────
 
-function LinkPopover({ editor, variables = [] }: { editor: Editor; variables?: string[] }) {
+function LinkPopover({ editor, variables = [] }: { editor: any; variables?: string[] }) {
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const isActive = editor.isActive("link");
+  const isImageActive = editor.isActive("image");
+  const isActive = editor.isActive("link") || (isImageActive && !!editor.getAttributes("image").href);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -501,7 +502,10 @@ function LinkPopover({ editor, variables = [] }: { editor: Editor; variables?: s
   }, []);
 
   const handleOpen = () => {
-    const prev = (editor.getAttributes("link").href as string) ?? "";
+    let prev = (editor.getAttributes("link").href as string) ?? "";
+    if (editor.isActive("image")) {
+      prev = (editor.getAttributes("image").href as string) ?? prev;
+    }
     setUrl(prev);
     setOpen((v) => !v);
     setTimeout(() => inputRef.current?.focus(), 0);
@@ -509,17 +513,25 @@ function LinkPopover({ editor, variables = [] }: { editor: Editor; variables?: s
 
   const handleApply = () => {
     const trimmed = url.trim();
-    if (!trimmed) {
-      editor.chain().focus().unsetLink().run();
+    if (editor.isActive("image")) {
+      editor.chain().focus().updateAttributes("image", { href: trimmed || null }).run();
     } else {
-      editor.chain().focus().setLink({ href: trimmed }).run();
+      if (!trimmed) {
+        (editor.chain().focus() as any).unsetLink().run();
+      } else {
+        (editor.chain().focus() as any).setLink({ href: trimmed }).run();
+      }
     }
     setOpen(false);
     setUrl("");
   };
 
   const handleRemove = () => {
-    editor.chain().focus().unsetLink().run();
+    if (editor.isActive("image")) {
+      editor.chain().focus().updateAttributes("image", { href: null }).run();
+    } else {
+      (editor.chain().focus() as any).unsetLink().run();
+    }
     setOpen(false);
     setUrl("");
   };
@@ -615,7 +627,35 @@ export function RichEditor({
       Underline,
       Highlight.configure({ multicolor: true }),
       Link.configure({ openOnClick: false, validate: () => true, HTMLAttributes: { class: "text-g-blue underline" } }),
-      Image.configure({ HTMLAttributes: { class: "max-w-full rounded" } }),
+      Image.extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            href: { default: null },
+          };
+        },
+        parseHTML() {
+          return [
+            {
+              tag: 'a[href] img',
+              getAttrs: (node) => {
+                const el = node as HTMLElement;
+                return {
+                  href: el.parentElement?.getAttribute('href') || null,
+                };
+              },
+            },
+            ...(this.parent?.() || []),
+          ];
+        },
+        renderHTML({ HTMLAttributes }) {
+          const { href, ...rest } = HTMLAttributes;
+          if (href) {
+            return ['a', { href, target: '_blank', rel: 'noopener noreferrer' }, ['img', mergeAttributes(this.options.HTMLAttributes, rest)]];
+          }
+          return ['img', mergeAttributes(this.options.HTMLAttributes, rest)];
+        }
+      }).configure({ HTMLAttributes: { class: "max-w-full rounded" } }),
       Placeholder.configure({ placeholder }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
     ],

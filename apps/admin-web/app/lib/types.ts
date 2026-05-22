@@ -57,6 +57,7 @@ export interface WhitelistEntry {
   id: string;
   email: string;
   role: "super_admin" | "chapter_leader" | "editor";
+  chapter_id?: string;
   added_by: string;
   created_at: string;
 }

@@ -246,6 +246,7 @@
 
   /* Images */
   img { max-width: 100%; border-radius: 0.375em; display: block; }
+  img.ProseMirror-selectednode { outline: 2px solid var(--primary); outline-offset: 2px; }
 }
 
 /* Dark mode overrides */

@@ -24,9 +24,9 @@ export async function clientLoader(): Promise<{ user: User }> {
       !user.chapter_id &&
       isChapterLeaderRole(user.role) &&
       typeof window !== "undefined" &&
-      !window.location.pathname.startsWith("/chapters/new");
+      window.location.pathname !== "/unauthorized";
     if (needsChapter) {
-      throw redirect("/chapters/new");
+      throw redirect("/unauthorized");
     }
     return { user };
   } catch (e) {

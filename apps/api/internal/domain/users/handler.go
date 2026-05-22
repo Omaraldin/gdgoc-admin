@@ -75,8 +75,9 @@ func (h *Handler) ListWhitelist(c *fiber.Ctx) error {
 
 func (h *Handler) AddToWhitelist(c *fiber.Ctx) error {
 	var body struct {
-		Email string `json:"email"`
-		Role  string `json:"role"`
+		Email     string  `json:"email"`
+		Role      string  `json:"role"`
+		ChapterID *string `json:"chapter_id"`
 	}
 	if err := c.BodyParser(&body); err != nil || body.Email == "" {
 		return apperrors.BadRequest("email is required")
@@ -94,6 +95,10 @@ func (h *Handler) AddToWhitelist(c *fiber.Ctx) error {
 			return apperrors.Forbidden("you are not associated with a chapter")
 		}
 		chapterID = &caller.ChapterID
+	} else {
+		if body.ChapterID != nil && *body.ChapterID != "" {
+			chapterID = body.ChapterID
+		}
 	}
 	entry, err := h.svc.AddToWhitelist(c.Context(), body.Email, body.Role, caller.ID, chapterID)
 	if err != nil {

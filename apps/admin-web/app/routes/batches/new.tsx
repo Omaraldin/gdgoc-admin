@@ -43,7 +43,7 @@ const VAR_PATTERN = /\{\{\s*([a-zA-Z0-9_.\\-]+)\s*\}\}/g;
 function extractInlineKeys(content: string): string[] {
   const keys: string[] = [];
   for (const m of content.matchAll(VAR_PATTERN)) {
-    const key = m[1].trim();
+    const key = m[1]?.trim();
     if (key && !keys.includes(key)) keys.push(key);
   }
   return keys;

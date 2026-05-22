@@ -29,6 +29,7 @@ import {
 import { Code, Plus, Trash2 } from "lucide-react";
 import { RecipientDataTable } from "~/components/RecipientDataTable";
 import { ScriptEditor } from "~/components/ScriptEditor";
+import { RichEditor } from "~/components/RichEditor";
 import type { RecipientInput } from "~/lib/api/issuance";
 import { loadFunctions, buildPreamble, evalScript } from "~/lib/script-functions";
 import type { Chapter } from "~/lib/types";
@@ -59,7 +60,7 @@ export default function ComposeMailPage() {
   // form state
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
-  const [isHtml, setIsHtml] = useState(false);
+  const [isHtml, setIsHtml] = useState(true);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -101,7 +102,7 @@ export default function ComposeMailPage() {
     } else {
       setSubject("");
       setBody("");
-      setIsHtml(false);
+      setIsHtml(true);
     }
   };
 
@@ -111,7 +112,8 @@ export default function ComposeMailPage() {
     const autoKeys: string[] = [];
     const VAR_PATTERN = /\{\{\s*([a-zA-Z0-9_.\\-]+)\s*\}\}/g;
     for (const m of content.matchAll(VAR_PATTERN)) {
-      const key = m[1].trim();
+      const key = m[1]?.trim();
+      if (!key) continue;
       if (key.startsWith("cert.") || key.startsWith("batch.")) {
         continue;
       } else if (key.startsWith("chapter.")) {
@@ -284,16 +286,13 @@ export default function ComposeMailPage() {
                     dangerouslySetInnerHTML={{ __html: selectedTemplate.body }}
                   />
                 ) : (
-                  <Textarea id="mail-body" rows={8} required value={body} onChange={(e) => setBody(e.target.value)} />
+                  <RichEditor
+                    value={body}
+                    onChange={setBody}
+                    variables={Object.keys(contextVars)}
+                  />
                 )}
               </div>
-
-              {!selectedTemplate && (
-                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                  <input type="checkbox" checked={isHtml} onChange={(e) => setIsHtml(e.target.checked)} className="rounded" />
-                  Send as HTML
-                </label>
-              )}
             </div>
           </CardContent>
         </Card>
