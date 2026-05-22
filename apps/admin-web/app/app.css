@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Alexandria:wght@100..900&family=Roboto+Mono:wght@400;500&display=swap");
+/* Font files loaded via <link> tags in the HTML document (see Layout). */
 @import "tailwindcss";
 
 /* ── Class-based dark mode ── */
@@ -72,8 +72,8 @@
   --color-input:                 var(--input);
   --color-ring:                  var(--ring);
   --radius:                      0.5rem;
-  --font-sans:                   "Google Sans", Roboto, system-ui, sans-serif;
-  --font-mono:                   "Roboto Mono", ui-monospace, monospace;
+  --font-sans:                   "Alexandria", system-ui, sans-serif;
+  --font-mono:                   ui-monospace, monospace;
 }
 
 /* ── Light theme ── */

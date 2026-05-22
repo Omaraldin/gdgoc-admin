@@ -40,6 +40,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Preconnect + stylesheet for Alexandria font (moved from CSS @import) */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Alexandria:wght@100..900&display=swap"
+          rel="stylesheet"
+        />
         <Meta />
         <Links />
       </head>

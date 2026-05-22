@@ -1,5 +1,5 @@
 import { useLoaderData } from "react-router";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { verifyCertificate } from "~/lib/api/verification";
 import type { VerificationResult } from "~/lib/types";
@@ -15,6 +15,21 @@ const FRONTEND_BASE_URL = import.meta.env.VITE_FRONTEND_URL ?? "http://localhost
 function getOgShareUrl(result?: VerificationResult): string | undefined {
   if (!result?.code) return undefined;
   return result.share_url ?? `${FRONTEND_BASE_URL}/verify/${encodeURIComponent(result.code)}`;
+}
+
+// Try to optimize known image providers (Cloudinary) by requesting auto-format/quality and a max width.
+function optimizeImageUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    const u = new URL(url);
+    // Cloudinary: insert transform after /upload/
+    if (u.hostname.includes("res.cloudinary.com") && u.pathname.includes("/upload/")) {
+      return url.replace("/upload/", "/upload/f_auto,q_auto,w_1200/");
+    }
+  } catch {
+    // ignore invalid URLs
+  }
+  return url;
 }
 
 export function meta({ loaderData }: Route.MetaArgs): Route.MetaDescriptors {
@@ -62,6 +77,8 @@ export default function VerifyPage() {
   const [copiedText, setCopiedText] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
   // ogShareUrl  → API endpoint (/api/v1/verify/:code/share) — serves OG HTML for LinkedIn crawler
   // verifyUrl   → actual frontend page URL — used for copy link & native share
   const ogShareUrl = getOgShareUrl(result) ?? "";
@@ -102,9 +119,19 @@ export default function VerifyPage() {
         {result.valid && result.preview_image_url && (
           <div className="mb-6 rounded-lg overflow-hidden border bg-[var(--canvas)]">
             <img
-              src={result.preview_image_url}
+              ref={imgRef}
+              src={optimizeImageUrl(result.preview_image_url)}
               alt="Certificate preview"
               className="w-full object-contain"
+              loading="eager"
+              fetchPriority="high"
+              onLoad={(e) => {
+                const el = e.currentTarget as HTMLImageElement;
+                if (el && el.naturalWidth && el.naturalHeight) {
+                  setImgDims({ w: el.naturalWidth, h: el.naturalHeight });
+                }
+              }}
+              {...(imgDims ? { width: imgDims.w, height: imgDims.h, style: { aspectRatio: `${imgDims.w}/${imgDims.h}` } } : {})}
             />
           </div>
         )}
