@@ -48,7 +48,7 @@ export default function BatchRecipientsPage() {
                   <TableCell>{r.email}</TableCell>
                   <TableCell><RecipientBadge status={r.status} /></TableCell>
                   <TableCell className="font-mono text-xs">
-                    <a href={`${API_BASE_URL}/verify/${r.id}/share`} className="text-primary hover:underline" target="_blank" rel="noreferrer">{r.id}</a>
+                    <a href={`/verify/${r.id}`} className="text-primary hover:underline" target="_blank" rel="noreferrer">{r.id}</a>
                   </TableCell>
                   <TableCell className="text-destructive text-xs">{r.failure_reason ?? ""}</TableCell>
                   <TableCell className="text-right">

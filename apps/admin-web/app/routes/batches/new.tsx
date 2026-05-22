@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLoaderData, Link } from "react-router";
-import { Plus, Trash2, Code } from "lucide-react";
-import { listTemplates, getTemplate, getTemplateVersion } from "~/lib/api/templates";
+import { Plus, Trash2, Code, Check, ChevronsUpDown } from "lucide-react";
+import { listTemplates, listPublicTemplates, getTemplate, getTemplateVersion } from "~/lib/api/templates";
 import { createBatch, listCertMetadata, createCertMetadata } from "~/lib/api/issuance";
 import type { RecipientInput } from "~/lib/api/issuance";
 import { getMe } from "~/lib/api/auth";
@@ -15,6 +15,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Card, CardContent } from "~/components/ui/card";
+import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "~/components/ui/command";
 import { cn } from "~/lib/utils";
 import type { Chapter, User, CertMetadata } from "~/lib/types";
 
@@ -23,12 +25,27 @@ export function meta() {
 }
 
 export async function clientLoader() {
-  const [templates, me, mailTemplates] = await Promise.all([listTemplates(), getMe(), listMailTemplates().catch(() => [] as MailTemplate[])]);
+  const [templates, publicTemplates, me, mailTemplates] = await Promise.all([
+    listTemplates(),
+    listPublicTemplates(),
+    getMe(),
+    listMailTemplates().catch(() => [] as MailTemplate[]),
+  ]);
+
+  const allTemplates = [...templates];
+  const seenIds = new Set<string>(templates.map((t) => t.id));
+  for (const tmpl of publicTemplates) {
+    if (!seenIds.has(tmpl.id)) {
+      allTemplates.push(tmpl);
+      seenIds.add(tmpl.id);
+    }
+  }
+
   let chapter: Chapter | null = null;
   if (me.chapter_id) {
     chapter = await getChapter(me.chapter_id).catch(() => null);
   }
-  return { templates, me, chapter, mailTemplates };
+  return { templates: allTemplates, me, chapter, mailTemplates };
 }
 
 interface ClassifiedVars {
@@ -104,6 +121,9 @@ export default function NewBatchPage() {
   const [batchName, setBatchName] = useState("");
   const [certId, setCertId] = useState("");
   const [certMetadataList, setCertMetadataList] = useState<CertMetadata[]>([]);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [certOpen, setCertOpen] = useState(false);
+  const [mailTemplateOpen, setMailTemplateOpen] = useState(false);
   // New cert modal state
   const [showNewCertModal, setShowNewCertModal] = useState(false);
   const [newCertName, setNewCertName] = useState("");
@@ -299,16 +319,47 @@ export default function NewBatchPage() {
                 The programme or event this batch belongs to. Groups batches on the Certifications page.
               </p>
               <div className="flex gap-2">
-                <select
-                  className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={certId}
-                  onChange={(e) => setCertId(e.target.value)}
-                >
-                  <option value="">— None —</option>
-                  {certMetadataList.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <Popover open={certOpen} onOpenChange={setCertOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={certOpen}
+                      className="flex h-9 flex-1 justify-between rounded-md border border-input bg-background px-3 py-1 text-sm text-left font-normal"
+                    >
+                      {selectedCert ? selectedCert.name : "— None —"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search certificates…" />
+                      <CommandList>
+                        <CommandEmpty>No certificate found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="none"
+                            onSelect={() => { setCertId(""); setCertOpen(false); }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", certId === "" ? "opacity-100" : "opacity-0")} />
+                            — None —
+                          </CommandItem>
+                          {certMetadataList.map((c) => (
+                            <CommandItem
+                              key={c.id}
+                              value={c.name}
+                              onSelect={() => { setCertId(c.id); setCertOpen(false); }}
+                            >
+                              <Check className={cn("mr-2 h-4 w-4", certId === c.id ? "opacity-100" : "opacity-0")} />
+                              {c.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 <Button
                   type="button"
                   variant="outline"
@@ -335,19 +386,42 @@ export default function NewBatchPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="batch-tmpl">Template <span className="text-destructive">*</span></Label>
-              <select
-                id="batch-tmpl"
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                required
-                value={templateId}
-                onChange={(e) => handleTemplateChange(e.target.value)}
-              >
-                <option value="">Select a template…</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name} ({t.status})</option>
-                ))}
-              </select>
+              <Label>Template <span className="text-destructive">*</span></Label>
+              <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={templateOpen}
+                    className="flex h-9 w-full justify-between rounded-md border border-input bg-background px-3 py-1 text-sm text-left font-normal"
+                  >
+                    {selectedTemplate ? `${selectedTemplate.name} (${selectedTemplate.status}${selectedTemplate.visibility === "public" ? ", public" : ""})` : "Select a template…"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search templates…" />
+                    <CommandList>
+                      <CommandEmpty>No template found.</CommandEmpty>
+                      <CommandGroup>
+                        {templates.map((t) => (
+                          <CommandItem
+                            key={t.id}
+                            value={`${t.name} ${t.status} ${t.visibility}`}
+                            onSelect={() => { handleTemplateChange(t.id); setTemplateOpen(false); }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", templateId === t.id ? "opacity-100" : "opacity-0")} />
+                            <span>{t.name}</span>
+                            <span className="ml-auto text-muted-foreground text-xs">{t.status}{t.visibility === "public" ? ", public" : ""}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </CardContent>
         </Card>
@@ -568,18 +642,48 @@ export default function NewBatchPage() {
           {sendMail && (
             <div className="border-t px-4 pb-4 pt-3 space-y-4 bg-muted/30">
               <div className="space-y-1.5">
-                <Label htmlFor="mail-tmpl">Email Template <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <select
-                  id="mail-tmpl"
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={mailTemplateId}
-                  onChange={(e) => { setMailTemplateId(e.target.value); setMailVarOverrides({}); }}
-                >
-                  <option value="">Default email (certificate download link)</option>
-                  {mailTemplates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+                <Label>Email Template <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Popover open={mailTemplateOpen} onOpenChange={setMailTemplateOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={mailTemplateOpen}
+                      className="flex h-9 w-full justify-between rounded-md border border-input bg-background px-3 py-1 text-sm text-left font-normal"
+                    >
+                      {selectedMailTemplate ? selectedMailTemplate.name : "Default email (certificate download link)"}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search email templates…" />
+                      <CommandList>
+                        <CommandEmpty>No email template found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="default"
+                            onSelect={() => { setMailTemplateId(""); setMailVarOverrides({}); setMailTemplateOpen(false); }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", mailTemplateId === "" ? "opacity-100" : "opacity-0")} />
+                            Default email (certificate download link)
+                          </CommandItem>
+                          {mailTemplates.map((t) => (
+                            <CommandItem
+                              key={t.id}
+                              value={t.name}
+                              onSelect={() => { setMailTemplateId(t.id); setMailVarOverrides({}); setMailTemplateOpen(false); }}
+                            >
+                              <Check className={cn("mr-2 h-4 w-4", mailTemplateId === t.id ? "opacity-100" : "opacity-0")} />
+                              {t.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 <p className="text-xs text-muted-foreground">
                   Pick a custom email template, or leave blank to use the default message.
                 </p>
