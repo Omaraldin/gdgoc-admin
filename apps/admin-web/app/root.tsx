@@ -47,6 +47,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           href="https://fonts.googleapis.com/css2?family=Alexandria:wght@100..900&display=swap"
           rel="stylesheet"
         />
+        <meta name="google-site-verification" content="DvK1AO5bB_CCefeE6coZfQSQsqmYj4BUcbUwRiuRg9I" />
         <Meta />
         <Links />
       </head>
