@@ -8,6 +8,7 @@ export default [
   route("auth/callback", "routes/auth/callback.tsx"),
   route("auth/logout", "routes/auth/logout.tsx"),
   route("unauthorized", "routes/unauthorized.tsx"),
+  route("privacy", "routes/privacy.tsx"),
 
   // Protected admin routes — wrapped in auth layout
   layout("layouts/admin-layout.tsx", [
