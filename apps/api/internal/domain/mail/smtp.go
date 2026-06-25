@@ -3,6 +3,7 @@ package mail
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -43,25 +44,37 @@ type OAuthCreds struct {
 	MicrosoftClientSecret string
 }
 
+// MailAttachment is a named file attachment to include in an outgoing email.
+type MailAttachment struct {
+	Filename    string // e.g. "certificate.png"
+	ContentType string // e.g. "image/png"
+	Data        []byte
+}
+
 // SendMail sends a single email using the provider specified in smtpCfg.
 // For Gmail/Outlook it refreshes the access token on every call; for manual
 // mode it uses SMTP PlainAuth.
 func SendMail(to, subject, body string, isHTML bool, smtpCfg SMTPConfig, oauthCreds OAuthCreds) error {
+	return SendMailWithAttachments(to, subject, body, isHTML, smtpCfg, oauthCreds, nil)
+}
+
+// SendMailWithAttachments is like SendMail but also attaches the given files.
+func SendMailWithAttachments(to, subject, body string, isHTML bool, smtpCfg SMTPConfig, oauthCreds OAuthCreds, attachments []MailAttachment) error {
 	switch smtpCfg.Provider {
 	case "gmail":
 		accessToken, err := RefreshAccessToken("gmail", oauthCreds.GoogleClientID, oauthCreds.GoogleClientSecret, smtpCfg.RefreshToken)
 		if err != nil {
 			return fmt.Errorf("refresh gmail token: %w", err)
 		}
-		return sendViaSMTPXOAuth2("smtp.gmail.com", 587, smtpCfg.FromEmail, accessToken, to, subject, body, isHTML, smtpCfg.ChapterName)
+		return sendViaSMTPXOAuth2WithAttachments("smtp.gmail.com", 587, smtpCfg.FromEmail, accessToken, to, subject, body, isHTML, smtpCfg.ChapterName, attachments)
 	case "outlook":
 		accessToken, err := RefreshAccessToken("outlook", oauthCreds.MicrosoftClientID, oauthCreds.MicrosoftClientSecret, smtpCfg.RefreshToken)
 		if err != nil {
 			return fmt.Errorf("refresh outlook token: %w", err)
 		}
-		return sendViaSMTPXOAuth2("smtp.office365.com", 587, smtpCfg.FromEmail, accessToken, to, subject, body, isHTML, smtpCfg.ChapterName)
+		return sendViaSMTPXOAuth2WithAttachments("smtp.office365.com", 587, smtpCfg.FromEmail, accessToken, to, subject, body, isHTML, smtpCfg.ChapterName, attachments)
 	case "manual":
-		return sendViaPlainAuth(smtpCfg.Host, smtpCfg.Port, smtpCfg.Username, smtpCfg.Password, smtpCfg.FromEmail, to, subject, body, isHTML, smtpCfg.ChapterName)
+		return sendViaPlainAuthWithAttachments(smtpCfg.Host, smtpCfg.Port, smtpCfg.Username, smtpCfg.Password, smtpCfg.FromEmail, to, subject, body, isHTML, smtpCfg.ChapterName, attachments)
 	default:
 		return fmt.Errorf("unknown smtp provider %q", smtpCfg.Provider)
 	}
@@ -211,13 +224,21 @@ func (a *xoauth2) Next(_ []byte, more bool) ([]byte, error) {
 }
 
 func sendViaSMTPXOAuth2(host string, port int, fromEmail, accessToken, to, subject, body string, isHTML bool, chapterName string) error {
+	return sendViaSMTPXOAuth2WithAttachments(host, port, fromEmail, accessToken, to, subject, body, isHTML, chapterName, nil)
+}
+
+func sendViaSMTPXOAuth2WithAttachments(host string, port int, fromEmail, accessToken, to, subject, body string, isHTML bool, chapterName string, attachments []MailAttachment) error {
 	auth := &xoauth2{user: fromEmail, accessToken: accessToken}
-	return smtpSend(host, port, auth, fromEmail, to, subject, body, isHTML, chapterName)
+	return smtpSend(host, port, auth, fromEmail, to, subject, body, isHTML, chapterName, attachments)
 }
 
 func sendViaPlainAuth(host string, port int, username, password, fromEmail, to, subject, body string, isHTML bool, chapterName string) error {
+	return sendViaPlainAuthWithAttachments(host, port, username, password, fromEmail, to, subject, body, isHTML, chapterName, nil)
+}
+
+func sendViaPlainAuthWithAttachments(host string, port int, username, password, fromEmail, to, subject, body string, isHTML bool, chapterName string, attachments []MailAttachment) error {
 	auth := smtp.PlainAuth("", username, password, host)
-	return smtpSend(host, port, auth, fromEmail, to, subject, body, isHTML, chapterName)
+	return smtpSend(host, port, auth, fromEmail, to, subject, body, isHTML, chapterName, attachments)
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +312,39 @@ var safeHTTPClient = &http.Client{
 // ---------------------------------------------------------------------------
 // HTML email helpers: layout wrapper + inline image embedding
 // ---------------------------------------------------------------------------
+
+// randomHex returns n random hex bytes, used for Message-ID and MIME boundaries.
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: time-based — still better than nothing.
+		return fmt.Sprintf("%x", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", b)
+}
+
+// messageID builds a unique RFC 2822 Message-ID using the sender's domain.
+func messageID(fromEmail string) string {
+	domain := "mail.local"
+	if idx := strings.LastIndex(fromEmail, "@"); idx >= 0 {
+		domain = fromEmail[idx+1:]
+	}
+	return fmt.Sprintf("<%s@%s>", randomHex(16), domain)
+}
+
+// formatDate returns the current time formatted per RFC 2822.
+func formatDate() string {
+	return time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 +0000")
+}
+
+// displayFrom formats the From header as "Display Name <email>" when a chapter
+// name is available, which looks more human and scores better with spam filters.
+func displayFrom(email, chapterName string) string {
+	if chapterName == "" {
+		return email
+	}
+	return fmt.Sprintf("%s <%s>", chapterName, email)
+}
 
 // inlineImage holds a single image to be embedded in a multipart/related message.
 type inlineImage struct {
@@ -434,10 +488,13 @@ func buildHTMLMIMEMessage(from, to, subject, htmlBody, chapterName string) []byt
 	embedded, images := fetchAndEmbedImages(wrapped)
 
 	var buf bytes.Buffer
-	buf.WriteString("From: " + from + "\r\n")
+	buf.WriteString("From: " + displayFrom(from, chapterName) + "\r\n")
 	buf.WriteString("To: " + to + "\r\n")
 	buf.WriteString("Subject: " + subject + "\r\n")
+	buf.WriteString("Date: " + formatDate() + "\r\n")
+	buf.WriteString("Message-ID: " + messageID(from) + "\r\n")
 	buf.WriteString("MIME-Version: 1.0\r\n")
+	buf.WriteString("X-Mailer: GDGoC Admin\r\n")
 
 	if len(images) == 0 {
 		buf.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
@@ -445,29 +502,21 @@ func buildHTMLMIMEMessage(from, to, subject, htmlBody, chapterName string) []byt
 		return buf.Bytes()
 	}
 
-	boundary := fmt.Sprintf("=_%x", time.Now().UnixNano())
+	boundary := "=_rel_" + randomHex(16)
 	buf.WriteString(fmt.Sprintf("Content-Type: multipart/related; type=\"text/html\"; boundary=\"%s\"\r\n\r\n", boundary))
 
 	// HTML part
-	buf.WriteString("--")
-	buf.WriteString(boundary)
-	buf.WriteString("\r\n")
+	buf.WriteString("--" + boundary + "\r\n")
 	buf.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
 	buf.WriteString(embedded)
 	buf.WriteString("\r\n")
 
 	// Inline image parts
 	for _, img := range images {
-		buf.WriteString("--")
-		buf.WriteString(boundary)
-		buf.WriteString("\r\n")
-		buf.WriteString("Content-Type: ")
-		buf.WriteString(img.contentType)
-		buf.WriteString("\r\n")
+		buf.WriteString("--" + boundary + "\r\n")
+		buf.WriteString("Content-Type: " + img.contentType + "\r\n")
 		buf.WriteString("Content-Transfer-Encoding: base64\r\n")
-		buf.WriteString("Content-ID: <")
-		buf.WriteString(img.cid)
-		buf.WriteString(">\r\n")
+		buf.WriteString("Content-ID: <" + img.cid + ">\r\n")
 		buf.WriteString("Content-Disposition: inline\r\n\r\n")
 		enc := base64.StdEncoding.EncodeToString(img.data)
 		for i := 0; i < len(enc); i += 76 {
@@ -479,29 +528,89 @@ func buildHTMLMIMEMessage(from, to, subject, htmlBody, chapterName string) []byt
 			buf.WriteString("\r\n")
 		}
 	}
-	buf.WriteString("--")
-	buf.WriteString(boundary)
-	buf.WriteString("--\r\n")
+	buf.WriteString("--" + boundary + "--\r\n")
+	return buf.Bytes()
+}
+
+// buildMixedMIMEMessage wraps the HTML (or plain-text) body in a
+// multipart/mixed envelope and appends each attachment as a separate part.
+func buildMixedMIMEMessage(from, to, subject, body string, isHTML bool, chapterName string, attachments []MailAttachment) []byte {
+	outerBoundary := "=_mixed_" + randomHex(16)
+
+	var buf bytes.Buffer
+	buf.WriteString("From: " + displayFrom(from, chapterName) + "\r\n")
+	buf.WriteString("To: " + to + "\r\n")
+	buf.WriteString("Subject: " + subject + "\r\n")
+	buf.WriteString("Date: " + formatDate() + "\r\n")
+	buf.WriteString("Message-ID: " + messageID(from) + "\r\n")
+	buf.WriteString("MIME-Version: 1.0\r\n")
+	buf.WriteString("X-Mailer: GDGoC Admin\r\n")
+	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n\r\n", outerBoundary))
+
+	// Body part — re-use existing HTML builder or plain text.
+	buf.WriteString("--" + outerBoundary + "\r\n")
+	if isHTML {
+		htmlMsg := buildHTMLMIMEMessage(from, to, subject, body, chapterName)
+		// Strip the outer headers so we can embed it as a part.
+		if idx := bytes.Index(htmlMsg, []byte("\r\n\r\n")); idx >= 0 {
+			// Write the Content-Type header from the inner message, then the body.
+			inner := htmlMsg[idx+4:]
+			// Grab just the Content-Type line from the inner headers.
+			innerHeaders := htmlMsg[:idx]
+			for _, line := range bytes.Split(innerHeaders, []byte("\r\n")) {
+				if bytes.HasPrefix(bytes.ToLower(line), []byte("content-type")) ||
+					bytes.HasPrefix(bytes.ToLower(line), []byte("mime-version")) {
+					buf.Write(line)
+					buf.WriteString("\r\n")
+				}
+			}
+			buf.WriteString("\r\n")
+			buf.Write(inner)
+		} else {
+			buf.Write(htmlMsg)
+		}
+	} else {
+		buf.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+		buf.WriteString(body)
+	}
+	buf.WriteString("\r\n")
+
+	// Attachment parts.
+	for _, att := range attachments {
+		buf.WriteString("--" + outerBoundary + "\r\n")
+		buf.WriteString("Content-Type: " + att.ContentType + "\r\n")
+		buf.WriteString("Content-Transfer-Encoding: base64\r\n")
+		buf.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n\r\n", att.Filename))
+		enc := base64.StdEncoding.EncodeToString(att.Data)
+		for i := 0; i < len(enc); i += 76 {
+			end := i + 76
+			if end > len(enc) {
+				end = len(enc)
+			}
+			buf.WriteString(enc[i:end])
+			buf.WriteString("\r\n")
+		}
+	}
+	buf.WriteString("--" + outerBoundary + "--\r\n")
 	return buf.Bytes()
 }
 
 // smtpSend dials the SMTP server, upgrades to TLS (implicit on port 465,
 // STARTTLS otherwise), authenticates, and delivers the message.
-func smtpSend(host string, port int, auth smtp.Auth, from, to, subject, body string, isHTML bool, chapterName string) error {
+func smtpSend(host string, port int, auth smtp.Auth, from, to, subject, body string, isHTML bool, chapterName string, attachments []MailAttachment) error {
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	var msg []byte
-	if isHTML {
+	if len(attachments) > 0 {
+		msg = buildMixedMIMEMessage(from, to, subject, body, isHTML, chapterName, attachments)
+	} else if isHTML {
 		msg = buildHTMLMIMEMessage(from, to, subject, body, chapterName)
 	} else {
 		msg = []byte(fmt.Sprintf(
-			"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
-			from, to, subject, body,
+			"From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMessage-ID: %s\r\nMIME-Version: 1.0\r\nX-Mailer: GDGoC Admin\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
+			displayFrom(from, chapterName), to, subject, formatDate(), messageID(from), body,
 		))
 	}
-
-	fmt.Printf("SendMail: to=%s subject=%q isHTML=%t\n", to, subject, isHTML)
-	fmt.Printf("Email body before sending:\n%s\n", body)
 
 	var c *smtp.Client
 	var err error
@@ -549,6 +658,56 @@ func smtpSend(host string, port int, auth smtp.Auth, from, to, subject, body str
 		return fmt.Errorf("smtp write: %w", err)
 	}
 	return w.Close()
+}
+
+// ProbeConnection verifies that the SMTP config is currently usable:
+//   - OAuth providers: attempts a token refresh (catches expired/revoked tokens)
+//   - Manual SMTP: dials the server, completes STARTTLS/TLS, authenticates, then sends QUIT
+//
+// Returns nil when the config is working, an error otherwise.
+func ProbeConnection(cfg SMTPConfig, oauthCreds OAuthCreds) error {
+	switch cfg.Provider {
+	case "gmail":
+		_, err := RefreshAccessToken("gmail", oauthCreds.GoogleClientID, oauthCreds.GoogleClientSecret, cfg.RefreshToken)
+		return err
+	case "outlook":
+		_, err := RefreshAccessToken("outlook", oauthCreds.MicrosoftClientID, oauthCreds.MicrosoftClientSecret, cfg.RefreshToken)
+		return err
+	case "manual":
+		addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+		auth := smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
+		var c *smtp.Client
+		var err error
+		if cfg.Port == 465 {
+			conn, dialErr := tls.Dial("tcp", addr, &tls.Config{ServerName: cfg.Host})
+			if dialErr != nil {
+				return fmt.Errorf("probe tls dial: %w", dialErr)
+			}
+			c, err = smtp.NewClient(conn, cfg.Host)
+			if err != nil {
+				conn.Close()
+				return fmt.Errorf("probe smtp client: %w", err)
+			}
+		} else {
+			c, err = smtp.Dial(addr)
+			if err != nil {
+				return fmt.Errorf("probe smtp dial: %w", err)
+			}
+			if ok, _ := c.Extension("STARTTLS"); ok {
+				if err := c.StartTLS(&tls.Config{ServerName: cfg.Host}); err != nil {
+					c.Close()
+					return fmt.Errorf("probe starttls: %w", err)
+				}
+			}
+		}
+		defer c.Close()
+		if err := c.Auth(auth); err != nil {
+			return fmt.Errorf("probe auth: %w", err)
+		}
+		return c.Quit()
+	default:
+		return fmt.Errorf("unknown provider %q", cfg.Provider)
+	}
 }
 
 func providerTokenURL(provider string) (string, error) {

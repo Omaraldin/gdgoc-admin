@@ -34,13 +34,16 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 )
 
+// New builds the Fiber application. It returns the app, the issuance service
+// (so main.go can share it with the worker), and any initialisation error.
 func New(
 	cfg *config.Config,
 	db *database.DB,
 	store storage.Backend,
 	issuanceQ chan<- string,
 	mailQ chan<- mail.MailJob,
-) (*fiber.App, error) {
+	diskCache *issuance.DiskCache,
+) (*fiber.App, *issuance.Service, error) {
 	app := fiber.New(fiber.Config{
 		AppName:      "GDGoC Admin API",
 		ErrorHandler: errorHandler,
@@ -85,7 +88,7 @@ func New(
 	authRepo := auth.NewRepository(db)
 	kayanClient, err := auth.NewKayanClient(cfg.Kayan, authRepo)
 	if err != nil {
-		return nil, fmt.Errorf("kayan: %w", err)
+		return nil, nil, fmt.Errorf("kayan: %w", err)
 	}
 	authSvc := auth.NewService(cfg, authRepo, kayanClient)
 	authH := auth.NewHandler(authSvc)
@@ -126,6 +129,7 @@ func New(
 		worker.ToPDFBytes,
 		cfg.PublicURL,
 		cfg.FrontendURL,
+		diskCache,
 	)
 	issuanceH := issuance.NewHandler(issuanceSvc)
 
@@ -316,7 +320,7 @@ func New(
 	protected.Post("/fonts", fontH.Upload)       // [authenticated] upload font
 	protected.Delete("/fonts/:id", fontH.Delete) // [authenticated] delete font
 
-	return app, nil
+	return app, issuanceSvc, nil
 }
 
 func healthCheck(c *fiber.Ctx) error {

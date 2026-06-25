@@ -7,19 +7,20 @@ import (
 )
 
 type Config struct {
-	AppEnv      string
-	ServerPort  string
-	DatabaseURL string
-	PublicURL   string // API_BASE_URL — used to build certificate render links in emails
-	FrontendURL string // FRONTEND_URL — base URL of the admin web app (e.g. https://admin.example.com)
-	Storage     StorageConfig
-	Kayan       KayanConfig
-	Session     SessionConfig
-	CORS        CORSConfig
-	Worker      WorkerConfig
-	SMTPOAuth   SMTPOAuthConfig
-	DB          DBPoolConfig
-	RateLimit   RateLimitConfig
+	AppEnv       string
+	ServerPort   string
+	DatabaseURL  string
+	PublicURL    string // API_BASE_URL — used to build certificate render links in emails
+	FrontendURL  string // FRONTEND_URL — base URL of the admin web app (e.g. https://admin.example.com)
+	Storage      StorageConfig
+	Kayan        KayanConfig
+	Session      SessionConfig
+	CORS         CORSConfig
+	Worker       WorkerConfig
+	SMTPOAuth    SMTPOAuthConfig
+	DB           DBPoolConfig
+	RateLimit    RateLimitConfig
+	FallbackSMTP FallbackSMTPConfig
 }
 
 // DBPoolConfig controls the PostgreSQL connection pool.
@@ -68,8 +69,16 @@ type CORSConfig struct {
 }
 
 type WorkerConfig struct {
-	Concurrency int
-	MaxRetries  int
+	Concurrency  int
+	MaxRetries   int
+	CertCacheDir string // CERT_CACHE_DIR — local directory for persisted certificate renders
+}
+
+// FallbackSMTPConfig is used when a chapter has no SMTP provider configured.
+// Set FALLBACK_SMTP_EMAIL and FALLBACK_SMTP_PASSWORD in the environment.
+type FallbackSMTPConfig struct {
+	Email    string // FALLBACK_SMTP_EMAIL
+	Password string // FALLBACK_SMTP_PASSWORD
 }
 
 // SMTPOAuthConfig holds the OAuth2 client credentials for Gmail and Outlook,
@@ -124,8 +133,9 @@ func Load() (*Config, error) {
 			AllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173"),
 		},
 		Worker: WorkerConfig{
-			Concurrency: getEnvInt("WORKER_CONCURRENCY", 5),
-			MaxRetries:  getEnvInt("WORKER_MAX_RETRIES", 3),
+			Concurrency:  getEnvInt("WORKER_CONCURRENCY", 5),
+			MaxRetries:   getEnvInt("WORKER_MAX_RETRIES", 3),
+			CertCacheDir: getEnv("CERT_CACHE_DIR", "./cert_cache"),
 		},
 		DB: DBPoolConfig{
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
@@ -137,6 +147,10 @@ func Load() (*Config, error) {
 			AuthWindowSecs:   getEnvInt("RATE_LIMIT_AUTH_WINDOW_SECS", 60),
 			PublicMax:        getEnvInt("RATE_LIMIT_PUBLIC_MAX", 60),
 			PublicWindowSecs: getEnvInt("RATE_LIMIT_PUBLIC_WINDOW_SECS", 60),
+		},
+		FallbackSMTP: FallbackSMTPConfig{
+			Email:    getEnv("FALLBACK_SMTP_EMAIL", ""),
+			Password: getEnv("FALLBACK_SMTP_PASSWORD", ""),
 		},
 		SMTPOAuth: SMTPOAuthConfig{
 			GoogleClientID:        getEnv("SMTP_GOOGLE_CLIENT_ID", ""),

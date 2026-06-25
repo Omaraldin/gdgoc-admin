@@ -37,3 +37,5 @@ Thumbs.db
 apps/admin-web/src/lib/api/generated/
 
 push.ps1
+
+apps/api/cert_cache/*

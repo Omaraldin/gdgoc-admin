@@ -45,7 +45,8 @@ type Service struct {
 	pdfEncoder  PDFEncoder
 	publicURL   string
 	frontendURL string
-	cache       sync.Map // key: recipientID+":"+format → *certCacheEntry
+	cache       sync.Map  // key: recipientID+":"+format → *certCacheEntry (in-flight dedup only)
+	diskCache   *DiskCache // nil if CERT_CACHE_DIR is unset
 }
 
 func NewService(
@@ -58,6 +59,7 @@ func NewService(
 	pdfEncoder PDFEncoder,
 	publicURL string,
 	frontendURL string,
+	diskCache *DiskCache,
 ) *Service {
 	return &Service{
 		repo:        repo,
@@ -69,6 +71,7 @@ func NewService(
 		pdfEncoder:  pdfEncoder,
 		publicURL:   publicURL,
 		frontendURL: frontendURL,
+		diskCache:   diskCache,
 	}
 }
 
@@ -79,34 +82,49 @@ func (s *Service) CertRenderURL(recipientID, format string) string {
 
 // RenderCertificate renders (or returns a cached render of) a recipient's
 // certificate in the requested format ("png" or "pdf").
+//
+// Cache priority: disk cache → in-flight singleflight dedup → full render.
+// On a successful render the result is written to disk so future calls
+// (including across process restarts) avoid recomputation.
 func (s *Service) RenderCertificate(ctx context.Context, recipientID, format string) ([]byte, string, error) {
 	if format != "pdf" {
 		format = "png"
 	}
 
+	contentType := "image/png"
+	if format == "pdf" {
+		contentType = "application/pdf"
+	}
+
+	// 1. Disk cache hit — serve immediately without touching the in-memory map.
+	if s.diskCache != nil {
+		if cached, err := s.diskCache.Get(recipientID, format); err == nil && cached != nil {
+			return cached, contentType, nil
+		}
+	}
+
+	// 2. In-flight dedup: only one goroutine renders; the rest wait.
 	key := recipientID + ":" + format
 	entry := &certCacheEntry{}
 	actual, loaded := s.cache.LoadOrStore(key, entry)
 	e := actual.(*certCacheEntry)
 	if !loaded {
-		// We won the race — compute the render.
 		e.once.Do(func() {
 			e.data, e.err = s.renderCertBytes(ctx, recipientID, format)
 			if e.err != nil {
-				// Remove failed entry so callers can retry.
+				s.cache.Delete(key)
+			} else if s.diskCache != nil {
+				// Best-effort persist; don't fail the request on write error.
+				_ = s.diskCache.Put(recipientID, format, e.data)
+				// Remove from in-memory map — disk is now the authority.
 				s.cache.Delete(key)
 			}
 		})
 	} else {
-		// Another goroutine may be computing — wait for it.
-		e.once.Do(func() {}) // no-op if already done; blocks if still running
+		e.once.Do(func() {})
 	}
 	if e.err != nil {
 		return nil, "", e.err
-	}
-	contentType := "image/png"
-	if format == "pdf" {
-		contentType = "application/pdf"
 	}
 	return e.data, contentType, nil
 }
@@ -320,6 +338,17 @@ func (s *Service) GetCertificate(ctx context.Context, recipientID string, caller
 	return rec, nil
 }
 
+// evictCert removes a recipient's rendered files from both the in-memory
+// singleflight map and the disk cache.
+func (s *Service) evictCert(recipientID string) {
+	for _, format := range []string{"png", "pdf"} {
+		s.cache.Delete(recipientID + ":" + format)
+	}
+	if s.diskCache != nil {
+		s.diskCache.Evict(recipientID)
+	}
+}
+
 // fetchCertificate retrieves a certificate record without authorization checks.
 // Used internally by the public render path and RevokeCertificate.
 func (s *Service) fetchCertificate(ctx context.Context, recipientID string) (*BatchRecipient, error) {
@@ -367,7 +396,11 @@ func (s *Service) RevokeCertificate(ctx context.Context, recipientID string, cal
 	if _, err := s.GetCertificate(ctx, recipientID, caller); err != nil {
 		return err
 	}
-	return s.repo.RevokeCertificate(ctx, recipientID)
+	if err := s.repo.RevokeCertificate(ctx, recipientID); err != nil {
+		return err
+	}
+	s.evictCert(recipientID)
+	return nil
 }
 
 // DownloadArchive writes a ZIP of every rendered PDF for the batch into w.
@@ -435,7 +468,8 @@ func (s *Service) ListCertificates(ctx context.Context, batchID string, caller *
 	return entries, nil
 }
 
-// DeleteBatch removes a batch and all its recipients from the database.
+// DeleteBatch removes a batch and all its recipients from the database,
+// and evicts every recipient's rendered files from the cache.
 func (s *Service) DeleteBatch(ctx context.Context, batchID string, caller *auth.SessionUser) error {
 	batch, err := s.GetBatch(ctx, batchID, caller)
 	if err != nil {
@@ -445,5 +479,17 @@ func (s *Service) DeleteBatch(ctx context.Context, batchID string, caller *auth.
 		return apperrors.BadRequest("cannot delete a batch while it is processing; cancel it first")
 	}
 
-	return s.repo.DeleteBatch(ctx, batchID)
+	recipients, err := s.repo.ListRecipients(ctx, batchID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.repo.DeleteBatch(ctx, batchID); err != nil {
+		return err
+	}
+
+	for _, rec := range recipients {
+		s.evictCert(rec.ID)
+	}
+	return nil
 }

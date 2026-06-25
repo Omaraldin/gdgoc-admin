@@ -21,8 +21,8 @@ import (
 	"github.com/joho/godotenv"
 )
 
+
 func main() {
-	// Try CWD first (running from apps/api/), then two levels up (running from apps/api/cmd/api/).
 	if err := godotenv.Load(); err != nil {
 		if err2 := godotenv.Load("../../.env"); err2 != nil && os.Getenv("APP_ENV") == "" {
 			log.Println("No .env file found, using environment variables")
@@ -44,7 +44,6 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	// Bootstrap first super admin from env (safe to run every startup)
 	if bootstrapEmail := os.Getenv("BOOTSTRAP_SUPER_ADMIN"); bootstrapEmail != "" {
 		authRepo := auth.NewRepository(db)
 		if err := authRepo.BootstrapSuperAdmin(context.Background(), bootstrapEmail); err != nil {
@@ -64,29 +63,36 @@ func main() {
 		log.Fatalf("failed to ensure storage buckets: %v", err)
 	}
 
-	app, err := server.New(cfg, db, store, issuanceQ, mailQ)
+	diskCache, err := issuance.NewDiskCache(cfg.Worker.CertCacheDir)
+	if err != nil {
+		log.Fatalf("failed to init cert disk cache: %v", err)
+	}
+
+	// server.New owns the issuance service; it returns it so the worker can
+	// share the exact same instance (and disk cache).
+	app, issuanceSvc, err := server.New(cfg, db, store, issuanceQ, mailQ, diskCache)
 	if err != nil {
 		log.Fatalf("failed to create server: %v", err)
 	}
 
-	// Start issuance worker
+	chapterRepo := chapters.NewRepository(db)
 	issuanceRepo := issuance.NewRepository(db)
 	tmplRepo := templates.NewRepository(db)
-	chapterRepo := chapters.NewRepository(db)
 	mailTemplateRepo := mail.NewTemplateRepository(db)
+
 	oauthCreds := mail.OAuthCreds{
 		GoogleClientID:        cfg.SMTPOAuth.GoogleClientID,
 		GoogleClientSecret:    cfg.SMTPOAuth.GoogleClientSecret,
 		MicrosoftClientID:     cfg.SMTPOAuth.MicrosoftClientID,
 		MicrosoftClientSecret: cfg.SMTPOAuth.MicrosoftClientSecret,
 	}
-	w := worker.NewIssuanceWorker(db, issuanceQ, issuanceRepo, tmplRepo, chapterRepo, mailTemplateRepo, cfg.Worker, oauthCreds, cfg.PublicURL, cfg.FrontendURL)
+
+	w := worker.NewIssuanceWorker(db, issuanceQ, issuanceRepo, tmplRepo, chapterRepo, mailTemplateRepo, cfg.Worker, oauthCreds, cfg.PublicURL, cfg.FrontendURL, issuanceSvc, cfg.FallbackSMTP)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	defer workerCancel()
 	go w.Run(workerCtx)
 
-	// Start mail worker (sends queued chapter emails via configured SMTP provider)
-	mailWorker := worker.NewMailWorker(mailQ, chapterRepo, oauthCreds, cfg.Worker.MaxRetries)
+mailWorker := worker.NewMailWorker(mailQ, chapterRepo, oauthCreds, cfg.Worker.MaxRetries, cfg.FallbackSMTP)
 	go mailWorker.Run(workerCtx)
 
 	go func() {

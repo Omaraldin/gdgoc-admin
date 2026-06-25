@@ -85,12 +85,14 @@ func (h *Handler) GetCertificate(c *fiber.Ctx) error {
 // and returns the result as PNG or PDF depending on the ?format= query param.
 // Rendered bytes are cached in memory keyed by recipient ID.
 func (h *Handler) RenderCertificate(c *fiber.Ctx) error {
+	id := c.Params("id")
 	format := c.Query("format", "png")
-	data, contentType, err := h.svc.RenderCertificate(c.Context(), c.Params("id"), format)
+	data, contentType, err := h.svc.RenderCertificate(c.Context(), id, format)
 	if err != nil {
 		return err
 	}
 	c.Set("Content-Type", contentType)
+	c.Set("Content-Disposition", `inline; filename="`+id+`.`+format+`"`)
 	c.Set("Cache-Control", "public, max-age=86400, immutable")
 	return c.Send(data)
 }

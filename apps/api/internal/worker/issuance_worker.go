@@ -15,6 +15,7 @@ import (
 	"github.com/gdgoc/admin-api/internal/domain/templates"
 )
 
+
 type IssuanceWorker struct {
 	db               *database.DB
 	queue            <-chan string
@@ -26,6 +27,8 @@ type IssuanceWorker struct {
 	oauthCreds       mail.OAuthCreds
 	publicURL        string
 	frontendURL      string
+	certSvc          *issuance.Service // used to pre-render and attach the certificate PNG in emails
+	fallbackSMTP     config.FallbackSMTPConfig
 }
 
 func NewIssuanceWorker(
@@ -39,6 +42,8 @@ func NewIssuanceWorker(
 	oauthCreds mail.OAuthCreds,
 	publicURL string,
 	frontendURL string,
+	certSvc *issuance.Service,
+	fallbackSMTP config.FallbackSMTPConfig,
 ) *IssuanceWorker {
 	return &IssuanceWorker{
 		db:               db,
@@ -51,6 +56,8 @@ func NewIssuanceWorker(
 		oauthCreds:       oauthCreds,
 		publicURL:        publicURL,
 		frontendURL:      frontendURL,
+		certSvc:          certSvc,
+		fallbackSMTP:     fallbackSMTP,
 	}
 }
 
@@ -119,12 +126,23 @@ func (w *IssuanceWorker) processJob(ctx context.Context, payload string) error {
 		return fmt.Errorf("get template version: %w", err)
 	}
 
+	// Resolve SMTP once for the whole batch (probes the connection).
+	// If the batch doesn't need mail, skip to avoid a needless network round-trip.
+	var smtpCfg *mail.SMTPConfig
+	if batch.SendMail {
+		smtpCfg, err = resolveSMTPConfig(ctx, w.chapterRepo, batch.ChapterID, w.fallbackSMTP, w.oauthCreds)
+		if err != nil {
+			log.Printf("batch %s: cannot resolve SMTP, mail will be skipped: %v", batch.ID, err)
+			// Non-fatal: certificates will still be rendered.
+		}
+	}
+
 	successCount, failedCount := 0, 0
 	for _, rec := range recipients {
 		if rec.Status != "queued" {
 			continue
 		}
-		if err := w.renderRecipient(ctx, batch, rec, version); err != nil {
+		if err := w.renderRecipient(ctx, batch, rec, version, smtpCfg); err != nil {
 			log.Printf("render failed for recipient %s: %v", rec.ID, err)
 			failedCount++
 			reason := err.Error()
@@ -154,6 +172,7 @@ func (w *IssuanceWorker) renderRecipient(
 	batch *issuance.IssuanceBatch,
 	rec *issuance.BatchRecipient,
 	version *templates.TemplateVersion,
+	smtpCfg *mail.SMTPConfig,
 ) error {
 	// Mark as rendering
 	w.db.Gorm.WithContext(ctx).Exec(
@@ -170,8 +189,8 @@ func (w *IssuanceWorker) renderRecipient(
 	w.db.Gorm.WithContext(ctx).Exec(
 		`UPDATE issuance_recipients SET status = 'rendered', updated_at = NOW() WHERE id = ?`, rec.ID)
 
-	if batch.SendMail {
-		if err := w.sendCertificateMail(ctx, batch, rec); err != nil {
+	if batch.SendMail && smtpCfg != nil {
+		if err := w.sendCertificateMail(ctx, batch, rec, smtpCfg); err != nil {
 			log.Printf("send mail failed for recipient %s: %v", rec.ID, err)
 			// Mail failure is non-fatal — certificate is rendered; mark as rendered
 		} else {
@@ -188,12 +207,8 @@ func (w *IssuanceWorker) sendCertificateMail(
 	ctx context.Context,
 	batch *issuance.IssuanceBatch,
 	rec *issuance.BatchRecipient,
+	smtpCfg *mail.SMTPConfig,
 ) error {
-	smtpCfg, err := w.chapterRepo.GetSMTPConfig(ctx, batch.ChapterID)
-	if err != nil {
-		return fmt.Errorf("smtp config: %w", err)
-	}
-
 	pdfURL := fmt.Sprintf("%s/api/v1/certificates/%s/render?format=pdf", w.publicURL, rec.ID)
 	// cert.verify_url points to the frontend verify page (human-readable link in emails).
 	// The OG share endpoint is on the API; only the LinkedIn crawler needs that.
@@ -244,7 +259,7 @@ func (w *IssuanceWorker) sendCertificateMail(
 			}
 			subject := Interpolate(tmpl.Subject, mailVars)
 			body := Interpolate(tmpl.Body, mailVars)
-			return mail.SendMail(rec.Email, subject, body, true, *smtpCfg, w.oauthCreds)
+			return mail.SendMailWithAttachments(rec.Email, subject, body, true, *smtpCfg, w.oauthCreds, w.renderAttachment(ctx, rec.ID))
 		}
 	}
 
@@ -260,5 +275,24 @@ func (w *IssuanceWorker) sendCertificateMail(
 			"<p><a href=\""+pdfURL+"\">Download your certificate (PDF)</a></p>",
 		displayName,
 	)
-	return mail.SendMail(rec.Email, subject, body, true, *smtpCfg, w.oauthCreds)
+	return mail.SendMailWithAttachments(rec.Email, subject, body, true, *smtpCfg, w.oauthCreds, w.renderAttachment(ctx, rec.ID))
+}
+
+// renderAttachment renders the certificate PNG for the given recipient and
+// returns it as a mail attachment. Returns nil on any error so that a failed
+// render does not prevent the email from being sent.
+func (w *IssuanceWorker) renderAttachment(ctx context.Context, recipientID string) []mail.MailAttachment {
+	if w.certSvc == nil {
+		return nil
+	}
+	data, _, err := w.certSvc.RenderCertificate(ctx, recipientID, "png")
+	if err != nil {
+		log.Printf("renderAttachment: render png for %s: %v", recipientID, err)
+		return nil
+	}
+	return []mail.MailAttachment{{
+		Filename:    recipientID + ".png",
+		ContentType: "image/png",
+		Data:        data,
+	}}
 }
