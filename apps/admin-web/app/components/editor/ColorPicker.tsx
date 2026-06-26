@@ -5,27 +5,27 @@ import { createPortal } from "react-dom";
 const GOOGLE_COLORS: { label: string; colors: string[] }[] = [
   {
     label: "Google Blue",
-    colors: ["#E8F0FE", "#AECBFA", "#669DF6", "#1A73E8"],
+    colors: ["#c3ecf6", "#57caff", "#4285f4"],
   },
   {
     label: "Google Red",
-    colors: ["#FAD2CF", "#F28B82", "#D93025", "#B31412"],
+    colors: ["#f8d8d8", "#ff7daf", "#ea4335"],
   },
   {
     label: "Google Green",
-    colors: ["#CEEAD6", "#81C995", "#34A853", "#188038"],
+    colors: ["#ccf6c5", "#5cdb6d", "#34a853"],
   },
   {
     label: "Google Yellow",
-    colors: ["#FEF08A", "#FDE047", "#FBBC04", "#F09300"],
+    colors: ["#ffe7a5", "#ffd427", "#f9ab00"],
   },
   {
     label: "Neutrals",
-    colors: ["#FFFFFF", "#F1F3F4", "#BDC1C6", "#80868B"],
+    colors: ["#f0f0f0", "#BDC1C6", "#80868B"],
   },
   {
     label: "Dark",
-    colors: ["#5F6368", "#3C4043", "#202124", "#000000"],
+    colors: ["#3C4043", "#1e1e1e", "#000000"],
   },
 ];
 
