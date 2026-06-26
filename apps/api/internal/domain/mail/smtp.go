@@ -534,8 +534,16 @@ func buildHTMLMIMEMessage(from, to, subject, htmlBody, chapterName string) []byt
 
 // buildMixedMIMEMessage wraps the HTML (or plain-text) body in a
 // multipart/mixed envelope and appends each attachment as a separate part.
+//
+// Structure for HTML with inline images + attachments:
+//
+//	multipart/mixed
+//	  └─ multipart/related
+//	       ├─ text/html  (cid: references for any embedded images)
+//	       └─ inline image parts
+//	  └─ file attachment parts
 func buildMixedMIMEMessage(from, to, subject, body string, isHTML bool, chapterName string, attachments []MailAttachment) []byte {
-	outerBoundary := "=_mixed_" + randomHex(16)
+	mixedBoundary := "=_mixed_" + randomHex(16)
 
 	var buf bytes.Buffer
 	buf.WriteString("From: " + displayFrom(from, chapterName) + "\r\n")
@@ -545,29 +553,45 @@ func buildMixedMIMEMessage(from, to, subject, body string, isHTML bool, chapterN
 	buf.WriteString("Message-ID: " + messageID(from) + "\r\n")
 	buf.WriteString("MIME-Version: 1.0\r\n")
 	buf.WriteString("X-Mailer: GDGoC Admin\r\n")
-	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n\r\n", outerBoundary))
+	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n\r\n", mixedBoundary))
 
-	// Body part — re-use existing HTML builder or plain text.
-	buf.WriteString("--" + outerBoundary + "\r\n")
+	// ── body part ────────────────────────────────────────────────────────────
+	buf.WriteString("--" + mixedBoundary + "\r\n")
 	if isHTML {
-		htmlMsg := buildHTMLMIMEMessage(from, to, subject, body, chapterName)
-		// Strip the outer headers so we can embed it as a part.
-		if idx := bytes.Index(htmlMsg, []byte("\r\n\r\n")); idx >= 0 {
-			// Write the Content-Type header from the inner message, then the body.
-			inner := htmlMsg[idx+4:]
-			// Grab just the Content-Type line from the inner headers.
-			innerHeaders := htmlMsg[:idx]
-			for _, line := range bytes.Split(innerHeaders, []byte("\r\n")) {
-				if bytes.HasPrefix(bytes.ToLower(line), []byte("content-type")) ||
-					bytes.HasPrefix(bytes.ToLower(line), []byte("mime-version")) {
-					buf.Write(line)
+		wrapped := wrapInEmailLayout(constrainImages(body), chapterName)
+		embedded, images := fetchAndEmbedImages(wrapped)
+
+		if len(images) == 0 {
+			// Simple HTML part — no inline images.
+			buf.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
+			buf.WriteString(embedded)
+		} else {
+			// multipart/related so inline images stay with their HTML.
+			relBoundary := "=_rel_" + randomHex(16)
+			buf.WriteString(fmt.Sprintf("Content-Type: multipart/related; type=\"text/html\"; boundary=\"%s\"\r\n\r\n", relBoundary))
+
+			buf.WriteString("--" + relBoundary + "\r\n")
+			buf.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
+			buf.WriteString(embedded)
+			buf.WriteString("\r\n")
+
+			for _, img := range images {
+				buf.WriteString("--" + relBoundary + "\r\n")
+				buf.WriteString("Content-Type: " + img.contentType + "\r\n")
+				buf.WriteString("Content-Transfer-Encoding: base64\r\n")
+				buf.WriteString("Content-ID: <" + img.cid + ">\r\n")
+				buf.WriteString("Content-Disposition: inline\r\n\r\n")
+				enc := base64.StdEncoding.EncodeToString(img.data)
+				for i := 0; i < len(enc); i += 76 {
+					end := i + 76
+					if end > len(enc) {
+						end = len(enc)
+					}
+					buf.WriteString(enc[i:end])
 					buf.WriteString("\r\n")
 				}
 			}
-			buf.WriteString("\r\n")
-			buf.Write(inner)
-		} else {
-			buf.Write(htmlMsg)
+			buf.WriteString("--" + relBoundary + "--\r\n")
 		}
 	} else {
 		buf.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
@@ -575,9 +599,9 @@ func buildMixedMIMEMessage(from, to, subject, body string, isHTML bool, chapterN
 	}
 	buf.WriteString("\r\n")
 
-	// Attachment parts.
+	// ── attachment parts ─────────────────────────────────────────────────────
 	for _, att := range attachments {
-		buf.WriteString("--" + outerBoundary + "\r\n")
+		buf.WriteString("--" + mixedBoundary + "\r\n")
 		buf.WriteString("Content-Type: " + att.ContentType + "\r\n")
 		buf.WriteString("Content-Transfer-Encoding: base64\r\n")
 		buf.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n\r\n", att.Filename))
@@ -591,7 +615,7 @@ func buildMixedMIMEMessage(from, to, subject, body string, isHTML bool, chapterN
 			buf.WriteString("\r\n")
 		}
 	}
-	buf.WriteString("--" + outerBoundary + "--\r\n")
+	buf.WriteString("--" + mixedBoundary + "--\r\n")
 	return buf.Bytes()
 }
 
