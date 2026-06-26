@@ -113,9 +113,21 @@ func (r *ImageRenderer) cachedImage(ctx context.Context, assetKey string) image.
 // weight is a CSS font-weight value (100–900); 400 = regular, 700 = bold.
 // It first tries to load from the fonts directory, then falls back to the
 // embedded Go fonts.
+// fontFamilyAliases maps font families that are unavailable on Linux/Google Fonts
+// to their closest freely-available substitute.
+var fontFamilyAliases = map[string]string{
+	"Helvetica":        "Arial",
+	"Helvetica Neue":   "Arial",
+	"Times":            "Times New Roman",
+	"Courier":          "Courier New",
+}
+
 func (r *ImageRenderer) resolveFont(family string, weight int, italic bool) *canvas.Font {
 	if family == "" {
 		return r.defaultFont(weight, italic)
+	}
+	if alias, ok := fontFamilyAliases[family]; ok {
+		family = alias
 	}
 	key := fmt.Sprintf("%s|%d|%v", family, weight, italic)
 	r.fontsMu.RLock()
@@ -227,8 +239,6 @@ func downloadGoogleFontBytes(family string, weight int, italic bool, cacheDir st
 		"https://fonts.googleapis.com/css?family=%s:%s",
 		strings.ReplaceAll(family, " ", "+"), variant,
 	)
-	log.Printf("[font-debug] CSS API request: GET %s", apiURL)
-
 	const androidUA = "Mozilla/5.0 (Linux; U; Android 2.2; en-us; Nexus One Build/FRF91) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1"
 	client := &http.Client{Timeout: 15 * time.Second}
 
@@ -240,11 +250,9 @@ func downloadGoogleFontBytes(family string, weight int, italic bool, cacheDir st
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[font-debug] CSS API request failed: %v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
-	log.Printf("[font-debug] CSS API response: HTTP %d", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("google fonts CSS API status %d for %q", resp.StatusCode, family)
 	}
@@ -253,16 +261,15 @@ func downloadGoogleFontBytes(family string, weight int, italic bool, cacheDir st
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[font-debug] CSS body:\n%s", string(css))
 
-	// Extract the .ttf URL — the Android UA guarantees a truetype src line.
-	re := regexp.MustCompile(`url\((https://[^)]+\.ttf)\)`)
+	// Match any truetype src URL — Google CDN URLs no longer end in .ttf.
+	// Matches: url(https://...) format('truetype')
+	re := regexp.MustCompile(`url\((https://[^)]+)\)\s+format\('truetype'\)`)
 	m := re.FindSubmatch(css)
 	if m == nil {
-		return nil, fmt.Errorf("no TTF URL in CSS for %q variant %q — response:\n%s", family, variant, css)
+		return nil, fmt.Errorf("no truetype URL in CSS for %q variant %q", family, variant)
 	}
 	ttfURL := string(m[1])
-	log.Printf("[font-debug] TTF URL: %s", ttfURL)
 
 	fontReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ttfURL, nil)
 	if err != nil {
@@ -271,28 +278,26 @@ func downloadGoogleFontBytes(family string, weight int, italic bool, cacheDir st
 	fontReq.Header.Set("User-Agent", androidUA)
 	fontResp, err := client.Do(fontReq)
 	if err != nil {
-		return nil, fmt.Errorf("TTF download: %w", err)
+		return nil, fmt.Errorf("font download: %w", err)
 	}
 	defer fontResp.Body.Close()
-	log.Printf("[font-debug] TTF response: HTTP %d", fontResp.StatusCode)
 	if fontResp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("TTF download status %d for %q", fontResp.StatusCode, family)
+		return nil, fmt.Errorf("font download status %d for %q", fontResp.StatusCode, family)
 	}
 
 	fontData, err := io.ReadAll(fontResp.Body)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[font-debug] TTF downloaded: %d bytes", len(fontData))
 
 	if cacheDir != "" {
 		suffix := fontWeightSuffix(weight, italic)
 		name := strings.ReplaceAll(family, " ", "") + suffix + ".ttf"
 		dest := filepath.Join(cacheDir, name)
 		if werr := os.WriteFile(dest, fontData, 0600); werr != nil {
-			log.Printf("[font-debug] cache write failed: %v", werr)
+			log.Printf("[font] cache write failed for %q: %v", family, werr)
 		} else {
-			log.Printf("[font-debug] cached to: %s", dest)
+			log.Printf("[font] cached %q to %s", family, dest)
 		}
 	}
 
