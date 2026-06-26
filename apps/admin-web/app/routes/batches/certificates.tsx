@@ -1,4 +1,5 @@
 import { useLoaderData, Link } from "react-router";
+import { useState } from "react";
 import type { Route } from "./+types/certificates";
 import { listCertificates, type CertificateEntry } from "~/lib/api/issuance";
 import { getBatch } from "~/lib/api/issuance";
@@ -66,13 +67,23 @@ function CertificateCard({ cert }: { cert: CertificateEntry }) {
     cert.variables?.full_name ??
     cert.variables?.recipient_name ??
     null;
+  const [previewLoaded, setPreviewLoaded] = useState(false);
 
   return (
     <div className="bg-card border rounded-lg overflow-hidden flex flex-col">
       {/* Preview image */}
       <div className="bg-[var(--canvas)] aspect-[16/10] flex items-center justify-center overflow-hidden">
         {cert.png_url ? (
-          <img src={cert.png_url} alt={cert.email} className="w-full h-full object-contain" />
+          previewLoaded ? (
+            <img src={cert.png_url} alt={cert.email} className="w-full h-full object-contain" />
+          ) : (
+            <button
+              onClick={() => setPreviewLoaded(true)}
+              className="text-xs text-primary hover:underline font-medium"
+            >
+              Load preview
+            </button>
+          )
         ) : (
           <span className="text-muted-foreground text-xs">No preview</span>
         )}
