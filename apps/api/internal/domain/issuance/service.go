@@ -9,7 +9,9 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"log"
 	"sync"
+	"time"
 
 	"github.com/gdgoc/admin-api/internal/apperrors"
 	"github.com/gdgoc/admin-api/internal/config"
@@ -110,14 +112,18 @@ func (s *Service) RenderCertificate(ctx context.Context, recipientID, format str
 	e := actual.(*certCacheEntry)
 	if !loaded {
 		e.once.Do(func() {
+			log.Printf("[render] start %s format=%s", recipientID, format)
+			t0 := time.Now()
 			e.data, e.err = s.renderCertBytes(ctx, recipientID, format)
 			if e.err != nil {
+				log.Printf("[render] error %s: %v", recipientID, e.err)
 				s.cache.Delete(key)
-			} else if s.diskCache != nil {
-				// Best-effort persist; don't fail the request on write error.
-				_ = s.diskCache.Put(recipientID, format, e.data)
-				// Remove from in-memory map — disk is now the authority.
-				s.cache.Delete(key)
+			} else {
+				log.Printf("[render] done %s format=%s in %s (%d bytes)", recipientID, format, time.Since(t0), len(e.data))
+				if s.diskCache != nil {
+					_ = s.diskCache.Put(recipientID, format, e.data)
+					s.cache.Delete(key)
+				}
 			}
 		})
 	} else {

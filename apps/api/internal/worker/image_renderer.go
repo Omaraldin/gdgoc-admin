@@ -65,6 +65,8 @@ type ImageRenderer struct {
 	fontsDir   string
 	fontsMu    sync.RWMutex
 	fontsCache map[string]*canvas.Font
+	imagesMu   sync.RWMutex
+	imagesCache map[string]image.Image // keyed by asset key; avoids re-fetching from remote storage
 }
 
 func NewImageRenderer(store storage.Backend) *ImageRenderer {
@@ -74,10 +76,37 @@ func NewImageRenderer(store storage.Backend) *ImageRenderer {
 		fontsDir = "./data/fonts"
 	}
 	return &ImageRenderer{
-		store:      store,
-		fontsDir:   fontsDir,
-		fontsCache: make(map[string]*canvas.Font),
+		store:       store,
+		fontsDir:    fontsDir,
+		fontsCache:  make(map[string]*canvas.Font),
+		imagesCache: make(map[string]image.Image),
 	}
+}
+
+// cachedImage returns a decoded image.Image for the given asset key, fetching
+// and caching it on first access. Returns nil on any error.
+func (r *ImageRenderer) cachedImage(ctx context.Context, assetKey string) image.Image {
+	r.imagesMu.RLock()
+	if img, ok := r.imagesCache[assetKey]; ok {
+		r.imagesMu.RUnlock()
+		return img
+	}
+	r.imagesMu.RUnlock()
+
+	rc, err := r.store.GetObject(ctx, r.store.BucketAssets(), assetKey)
+	if err != nil {
+		return nil
+	}
+	defer rc.Close()
+	img, _, err := image.Decode(rc)
+	if err != nil {
+		return nil
+	}
+
+	r.imagesMu.Lock()
+	r.imagesCache[assetKey] = img
+	r.imagesMu.Unlock()
+	return img
 }
 
 // resolveFont returns a *canvas.Font for the given family name, weight and italic.
@@ -429,14 +458,11 @@ func (r *ImageRenderer) drawBackground(ctx context.Context, dc *canvas.Context, 
 		return
 	}
 	// Treat as asset key
-	if rc, err := r.store.GetObject(ctx, r.store.BucketAssets(), bg); err == nil {
-		defer rc.Close()
-		if img, _, err := image.Decode(rc); err == nil {
-			fitted := fitImage(img, w, h, "fill")
-			imgH := float64(fitted.Bounds().Dy())
-			dc.DrawImage(0, fh-imgH, fitted, canvas.DPMM(1.0))
-			return
-		}
+	if img := r.cachedImage(ctx, bg); img != nil {
+		fitted := fitImage(img, w, h, "fill")
+		imgH := float64(fitted.Bounds().Dy())
+		dc.DrawImage(0, fh-imgH, fitted, canvas.DPMM(1.0))
+		return
 	}
 	dc.Push()
 	dc.SetFillColor(color.White)
@@ -554,13 +580,8 @@ func (r *ImageRenderer) drawImageLayer(ctx context.Context, dc *canvas.Context, 
 	if layer.ImageProps == nil {
 		return
 	}
-	rc, err := r.store.GetObject(ctx, r.store.BucketAssets(), layer.ImageProps.AssetKey)
-	if err != nil {
-		return
-	}
-	defer rc.Close()
-	img, _, err := image.Decode(rc)
-	if err != nil {
+	img := r.cachedImage(ctx, layer.ImageProps.AssetKey)
+	if img == nil {
 		return
 	}
 
