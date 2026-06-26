@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BINARY="$API_DIR/bin/purge-cert-cache"
-LOG_FILE="/var/log/purge-cert-cache.log"
+LOG_FILE="$API_DIR/purge-cert-cache.log"
 CRON_ENTRY="0 2 * * 0 $SCRIPT_DIR/purge-cert-cache.sh >> $LOG_FILE 2>&1"
 
 # ── Register in crontab if not already there ──────────────────────────────────
