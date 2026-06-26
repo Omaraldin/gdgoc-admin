@@ -136,11 +136,14 @@ func (s *Service) RenderCertificate(ctx context.Context, recipientID, format str
 }
 
 func (s *Service) renderCertBytes(ctx context.Context, recipientID, format string) ([]byte, error) {
+	t := time.Now()
 	rec, err := s.fetchCertificate(ctx, recipientID)
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("[render] %s: fetched recipient in %s", recipientID, time.Since(t))
 
+	t = time.Now()
 	batch, err := s.repo.GetBatch(ctx, rec.BatchID)
 	if err != nil {
 		return nil, fmt.Errorf("get batch: %w", err)
@@ -150,6 +153,7 @@ func (s *Service) renderCertBytes(ctx context.Context, recipientID, format strin
 	if err != nil {
 		return nil, fmt.Errorf("get template version: %w", err)
 	}
+	log.Printf("[render] %s: fetched batch+template in %s", recipientID, time.Since(t))
 
 	var scene templates.SceneDefinition
 	if err := json.Unmarshal(version.Scene, &scene); err != nil {
@@ -189,10 +193,12 @@ func (s *Service) renderCertBytes(ctx context.Context, recipientID, format strin
 		vars["chapter.leader"] = s.chapterRepo.GetLeaderName(ctx, leaderID)
 	}
 
+	t = time.Now()
 	img, err := s.renderer.Render(ctx, scene, vars)
 	if err != nil {
 		return nil, fmt.Errorf("render: %w", err)
 	}
+	log.Printf("[render] %s: canvas render in %s", recipientID, time.Since(t))
 
 	if format == "pdf" {
 		return s.pdfEncoder(img)

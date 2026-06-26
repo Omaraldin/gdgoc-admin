@@ -30,6 +30,7 @@ type cloudinaryBackend struct {
 	apiSecret    string
 	bucketAssets string
 	bucketCerts  string
+	httpClient   *http.Client
 }
 
 func newCloudinaryBackend(cfg config.StorageConfig) (*cloudinaryBackend, error) {
@@ -47,6 +48,7 @@ func newCloudinaryBackend(cfg config.StorageConfig) (*cloudinaryBackend, error) 
 		apiKey:       cfg.AccessKey,
 		apiSecret:    cfg.SecretKey,
 		bucketAssets: cfg.BucketAssets,
+		httpClient:   &http.Client{Timeout: 30 * time.Second},
 		bucketCerts:  cfg.BucketCerts,
 	}, nil
 }
@@ -112,7 +114,7 @@ func (b *cloudinaryBackend) upload(ctx context.Context, objectKey string, r io.R
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := b.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("cloudinary: upload request: %w", err)
 	}
@@ -186,7 +188,7 @@ func (b *cloudinaryBackend) GetObject(ctx context.Context, bucket, objectKey str
 	if err != nil {
 		return nil, fmt.Errorf("cloudinary: create download request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := b.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cloudinary: download: %w", err)
 	}
@@ -236,7 +238,7 @@ func (b *cloudinaryBackend) DeleteObject(ctx context.Context, bucket, objectKey 
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := b.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("cloudinary: delete: %w", err)
 	}

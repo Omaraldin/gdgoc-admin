@@ -75,6 +75,7 @@ func NewImageRenderer(store storage.Backend) *ImageRenderer {
 	if fontsDir == "" {
 		fontsDir = "./data/fonts"
 	}
+	log.Printf("[font] fonts dir: %s", fontsDir)
 	return &ImageRenderer{
 		store:       store,
 		fontsDir:    fontsDir,
@@ -321,10 +322,13 @@ func (r *ImageRenderer) loadFontBytesFromDir(family string, weight int, italic b
 	}
 
 	for _, name := range candidates {
-		data, err := os.ReadFile(filepath.Join(r.fontsDir, name))
+		p := filepath.Join(r.fontsDir, name)
+		data, err := os.ReadFile(p)
 		if err != nil {
+			log.Printf("[font] miss: %s", p)
 			continue
 		}
+		log.Printf("[font] hit: %s", p)
 		return data
 	}
 	return nil
